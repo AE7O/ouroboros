@@ -9,28 +9,35 @@ import os
 # Add the current directory to Python path so we can import ouroboros
 sys.path.insert(0, os.path.dirname(__file__))
 
-from ouroboros.crypto.kdf import derive_session_keys, generate_root_key
+from ouroboros.crypto.kdf import derive_session_keys
 from ouroboros.crypto.aes_gcm import encrypt_message, decrypt_message
 from ouroboros.crypto.scramble import scramble_data, unscramble_data, test_scrambling_roundtrip
 from ouroboros.protocol.packet import OuroborosPacket, PacketType
 from ouroboros.utils.counter import CounterManager
+from ouroboros.config import OuroborosConfig
 
 
 def test_key_derivation():
-    """Test the key derivation functionality."""
-    print("🔑 Testing Key Derivation...")
+    """Test the key derivation functionality with file-based root key."""
+    print("🔑 Testing Key Derivation with File-based Root Key...")
     
-    # Generate a root key
-    root_key = generate_root_key()
-    print(f"   Generated root key: {len(root_key)} bytes")
+    # Create a test root key using config
+    test_config_dir = "/tmp/test_ouroboros_config"
+    config = OuroborosConfig(test_config_dir)
+    test_hex_key = "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+    config.set_root_key(test_hex_key)
+    
+    # Load the root key from config
+    loaded_root_key = config.get_root_key()
+    print(f"   Root key: {loaded_root_key.hex()}")
     
     # Derive first session keys
-    enc_key_0, scr_key_0 = derive_session_keys(root_key, 0)
+    enc_key_0, scr_key_0 = derive_session_keys(loaded_root_key, 0)
     print(f"   First encryption key: {enc_key_0[:8].hex()}...")
     print(f"   First scrambling key: {scr_key_0[:8].hex()}...")
     
     # Derive second session keys
-    enc_key_1, scr_key_1 = derive_session_keys(root_key, 1, enc_key_0, scr_key_0)
+    enc_key_1, scr_key_1 = derive_session_keys(loaded_root_key, 1, enc_key_0, scr_key_0)
     print(f"   Second encryption key: {enc_key_1[:8].hex()}...")
     print(f"   Second scrambling key: {scr_key_1[:8].hex()}...")
     
@@ -39,16 +46,49 @@ def test_key_derivation():
     assert scr_key_0 != scr_key_1, "Scrambling keys should be different"
     assert enc_key_0 != scr_key_0, "Enc and scr keys should be different"
     
-    print("   ✅ Key derivation working correctly!")
-    return root_key, enc_key_0, scr_key_0
+    print("   ✅ Key derivation working correctly with file-based root key!")
+    
+    # Clean up
+    import shutil
+    shutil.rmtree(test_config_dir)
+    
+    return loaded_root_key, enc_key_0, scr_key_0
+
+
+def test_config_system():
+    """Test the configuration system."""
+    print("\n⚙️  Testing Configuration System...")
+    
+    # Create a test config
+    test_config_dir = "/tmp/test_ouroboros_config"
+    config = OuroborosConfig(test_config_dir)
+    
+    # Set a known root key
+    test_hex_key = "1234567890abcdef" * 4  # 64 hex chars = 32 bytes
+    config.set_root_key(test_hex_key)
+    print(f"   Set root key: {test_hex_key}")
+    
+    # Load it back
+    loaded_key = config.get_root_key()
+    expected_key = bytes.fromhex(test_hex_key)
+    assert loaded_key == expected_key, "Loaded key should match set key"
+    print(f"   ✅ Config system working correctly!")
+    
+    # Clean up
+    import shutil
+    shutil.rmtree(test_config_dir)
+    
+    return loaded_key
 
 
 def test_encryption():
     """Test the AES-GCM encryption functionality."""
     print("\n🔒 Testing AES-GCM Encryption...")
     
-    # Generate a key and test data
-    root_key = generate_root_key()
+    # Generate a key and test data using config
+    config = OuroborosConfig("/tmp/test_encrypt_config")
+    config.set_root_key("fedcba0987654321" * 4)
+    root_key = config.get_root_key()
     enc_key, _ = derive_session_keys(root_key, 0)
     
     test_message = b"Hello, Ouroboros Protocol! This is a test message."
@@ -67,6 +107,10 @@ def test_encryption():
     assert decrypted == test_message, "Decryption should return original message"
     print("   ✅ Encryption/decryption working correctly!")
     
+    # Clean up
+    import shutil
+    shutil.rmtree("/tmp/test_encrypt_config")
+    
     return enc_key, test_message, nonce, ciphertext_with_tag
 
 
@@ -74,8 +118,10 @@ def test_scrambling():
     """Test the data scrambling functionality."""
     print("\n🔀 Testing Data Scrambling...")
     
-    # Generate a scrambling key
-    root_key = generate_root_key()
+    # Generate a scrambling key using config
+    config = OuroborosConfig("/tmp/test_scramble_config")
+    config.set_root_key("0123456789abcdef" * 4)
+    root_key = config.get_root_key()
     _, scr_key = derive_session_keys(root_key, 0)
     
     test_data = b"This is some test data that will be scrambled and unscrambled."
@@ -96,6 +142,10 @@ def test_scrambling():
     assert test_scrambling_roundtrip(scr_key, test_data), "Roundtrip test should pass"
     
     print("   ✅ Scrambling/unscrambling working correctly!")
+    
+    # Clean up
+    import shutil
+    shutil.rmtree("/tmp/test_scramble_config")
 
 
 def test_packet_handling():
@@ -154,18 +204,19 @@ def test_counter_management():
 
 def main():
     """Run all tests."""
-    print("🧪 Testing Ouroboros Protocol Implementation")
-    print("=" * 50)
+    print("🧪 Testing Ouroboros Protocol Implementation (File-based Root Key)")
+    print("=" * 60)
     
     try:
         test_key_derivation()
+        test_config_system()
         test_encryption()
         test_scrambling()
         test_packet_handling()
         test_counter_management()
         
         print("\n🎉 All tests passed successfully!")
-        print("✅ Core crypto and protocol components are working correctly!")
+        print("✅ Core crypto and protocol components working with file-based root keys!")
         
     except Exception as e:
         print(f"\n❌ Test failed: {e}")

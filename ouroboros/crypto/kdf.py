@@ -7,8 +7,8 @@ Implements the forward-secure key derivation chain where:
 - Uses HKDF with protocol-specific context strings
 """
 
+import os
 import hashlib
-import hmac
 from typing import Tuple, Optional
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -96,15 +96,78 @@ def derive_session_keys(
         raise KeyDerivationError(f"Key derivation failed: {str(e)}")
 
 
-def generate_root_key() -> bytes:
+def load_root_key(key_file_path: str) -> bytes:
     """
-    Generate a cryptographically secure root key.
+    Load the root key/master secret from a file.
     
+    Args:
+        key_file_path: Path to the file containing the root key
+        
     Returns:
-        32-byte root key for use in the protocol
+        bytes: The 32-byte root key
+        
+    Raises:
+        FileNotFoundError: If the key file doesn't exist
+        ValueError: If the key file format is invalid
     """
-    import os
-    return os.urandom(KEY_LENGTH)
+    if not os.path.exists(key_file_path):
+        raise FileNotFoundError(f"Root key file not found: {key_file_path}")
+    
+    with open(key_file_path, 'rb') as f:
+        key_data = f.read()
+    
+    # Support different formats
+    if len(key_data) == 32:
+        # Raw binary key (32 bytes)
+        return key_data
+    elif len(key_data) == 64:
+        # Hex-encoded key (64 hex chars = 32 bytes)
+        try:
+            return bytes.fromhex(key_data.decode('ascii'))
+        except (ValueError, UnicodeDecodeError):
+            pass
+    elif len(key_data) == 65 and key_data.endswith(b'\n'):
+        # Hex-encoded key with newline
+        try:
+            return bytes.fromhex(key_data[:-1].decode('ascii'))
+        except (ValueError, UnicodeDecodeError):
+            pass
+    
+    # If we get here, the format is not recognized
+    raise ValueError(f"Invalid root key format. Expected 32 raw bytes or 64 hex characters, got {len(key_data)} bytes")
+
+
+def create_root_key_file(key_file_path: str, root_key: bytes = None) -> bytes:
+    """
+    Create a root key file with either a provided key or a generated one.
+    
+    Args:
+        key_file_path: Path where to save the key file
+        root_key: Optional pre-existing key. If None, generates a new one.
+        
+    Returns:
+        bytes: The root key that was saved
+    """
+    if root_key is None:
+        root_key = generate_root_key()
+    
+    # Save as hex for human readability
+    with open(key_file_path, 'w') as f:
+        f.write(root_key.hex())
+    
+    # Set restrictive permissions (Unix/Linux)
+    try:
+        os.chmod(key_file_path, 0o600)  # rw-------
+    except (OSError, AttributeError):
+        # Windows or permission error - warn but continue
+        print(f"Warning: Could not set restrictive permissions on {key_file_path}")
+    
+    return root_key
+
+
+def generate_root_key() -> bytes:
+    """Generate a cryptographically secure 32-byte root key."""
+    return os.urandom(32)
 
 
 def verify_key_chain_integrity(
