@@ -14,7 +14,7 @@ import sys
 import os
 
 # Add the ouroboros package to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'python'))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from ouroboros.crypto.kdf import generate_root_key, derive_session_keys
 from ouroboros.crypto.aes_gcm import encrypt_message, decrypt_message
