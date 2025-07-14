@@ -56,27 +56,44 @@ def test_key_derivation():
 
 
 def test_config_system():
-    """Test the configuration system."""
-    print("\n⚙️  Testing Configuration System...")
+    """Test the refactored configuration system."""
+    print("\n⚙️  Testing Refactored Configuration System...")
     
     # Create a test config
     test_config_dir = "/tmp/test_ouroboros_config"
     config = OuroborosConfig(test_config_dir)
     
-    # Set a known root key
+    # Set a known root key using the refactored method
     test_hex_key = "1234567890abcdef" * 4  # 64 hex chars = 32 bytes
     config.set_root_key(test_hex_key)
     print(f"   Set root key: {test_hex_key}")
     
-    # Load it back
+    # Load it back using the refactored method
     loaded_key = config.get_root_key()
     expected_key = bytes.fromhex(test_hex_key)
     assert loaded_key == expected_key, "Loaded key should match set key"
-    print(f"   ✅ Config system working correctly!")
+    print(f"   ✅ Refactored config system working correctly!")
+    
+    # Test file format flexibility
+    # Create a binary key file and test copying
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(expected_key)  # Raw binary
+        tmp_file_path = tmp_file.name
+    
+    try:
+        config2 = OuroborosConfig(test_config_dir + "_2")
+        config2.set_root_key_from_file(tmp_file_path)  # Copy from binary file
+        loaded_key2 = config2.get_root_key()
+        assert loaded_key2 == expected_key, "Binary file loading should work"
+        print(f"   ✅ Multiple file formats supported!")
+    finally:
+        os.unlink(tmp_file_path)
     
     # Clean up
     import shutil
-    shutil.rmtree(test_config_dir)
+    shutil.rmtree(test_config_dir, ignore_errors=True)
+    shutil.rmtree(test_config_dir + "_2", ignore_errors=True)
     
     return loaded_key
 
