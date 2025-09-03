@@ -1,0 +1,3 @@
+[console_scripts]
+ouroboros-analyzer = ouroboros.tools.packet_analyzer:main
+ouroboros-keygen = ouroboros.tools.keygen:main
