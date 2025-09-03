@@ -1,8 +1,9 @@
 """
 Ouroboros Protocol Packet Definition and Handling.
 
-Defines the packet structure and provides functions for encoding/decoding
-protocol messages.
+Defines the new packet structure and provides functions for encoding/decoding
+protocol messages with the format:
+channel_id (1B) || counter (4B) || r (4B) || tag (16B) || scrambled_ciphertext
 """
 
 import struct
@@ -30,48 +31,41 @@ class OuroborosPacket:
     """
     Ouroboros protocol packet structure.
     
-    Packet format:
-    ┌────────────────┬─────────────────┬─────────────────┬──────────────┐
-    │   Header (8B)  │  Counter (8B)   │ Scrambled Data  │  Auth Tag    │
-    ├────────────────┼─────────────────┼─────────────────┼──────────────┤
-    │ Ver│Type│Flags │    MSG_COUNTER  │   CIPHERTEXT    │  GCM_TAG     │
-    └────────────────┴─────────────────┴─────────────────┴──────────────┘
+    New packet format:
+    ┌─────────────┬─────────────┬─────────────┬──────────────┬─────────────────┐
+    │ Channel ID  │  Counter    │      r      │   Auth Tag   │ Scrambled Data  │
+    │   (1B)      │    (4B)     │    (4B)     │    (16B)     │   (variable)    │
+    └─────────────┴─────────────┴─────────────┴──────────────┴─────────────────┘
+    
+    Total header: 25 bytes (1 + 4 + 4 + 16)
     """
     
-    # Protocol version (4 bits)
-    version: int = 1
+    # Channel identifier (8 bits)
+    channel_id: int = 0
     
-    # Packet type (4 bits) 
-    packet_type: PacketType = PacketType.DATA
-    
-    # Flags (8 bits)
-    flags: int = 0
-    
-    # Reserved field (16 bits)
-    reserved: int = 0
-    
-    # Message counter (64 bits)
+    # Message counter (32 bits)
     counter: int = 0
     
-    # Scrambled payload data
-    scrambled_data: bytes = b""
+    # Random value r (32 bits) 
+    r: int = 0
     
     # GCM authentication tag (16 bytes)
     auth_tag: bytes = b""
     
-    # Original nonce used for encryption (not transmitted)
-    nonce: Optional[bytes] = None
+    # Scrambled payload data
+    scrambled_data: bytes = b""
+    
+    # Packet type (not transmitted, used for higher-level logic)
+    packet_type: PacketType = PacketType.DATA
     
     def __post_init__(self):
         """Validate packet fields after initialization."""
-        if not (0 <= self.version <= 15):
-            raise PacketError("Version must be 0-15")
-        if not isinstance(self.packet_type, PacketType):
-            raise PacketError("Invalid packet type")
-        if not (0 <= self.flags <= 255):
-            raise PacketError("Flags must be 0-255")
-        if not (0 <= self.counter <= 2**64 - 1):
-            raise PacketError("Counter must be 64-bit value")
+        if not (0 <= self.channel_id <= 255):
+            raise PacketError("Channel ID must be 0-255")
+        if not (0 <= self.counter <= 2**32 - 1):
+            raise PacketError("Counter must be 32-bit value")
+        if not (0 <= self.r <= 2**32 - 1):
+            raise PacketError("Random value r must be 32-bit value")
         if self.auth_tag and len(self.auth_tag) != 16:
             raise PacketError("Auth tag must be 16 bytes")
     
@@ -83,22 +77,15 @@ class OuroborosPacket:
             Serialized packet data
         """
         try:
-            # Pack header (8 bytes total)
-            # Byte 0: Version (4 bits) + Type (4 bits)
-            version_type = (self.version << 4) | (self.packet_type & 0x0F)
+            # Pack header: channel_id (1B) + counter (4B) + r (4B) + tag (16B)
+            header = struct.pack('>BII', self.channel_id, self.counter, self.r)
             
-            # Bytes 1-7: Flags (1 byte) + Reserved (2 bytes) + padding (4 bytes)
-            header = struct.pack('>BBHI', version_type, self.flags, self.reserved, 0)
-            
-            # Counter (8 bytes)
-            counter_bytes = struct.pack('>Q', self.counter)
-            
-            # Combine all parts
-            packet_data = header + counter_bytes + self.scrambled_data + self.auth_tag
+            # Combine header + auth_tag + scrambled_data
+            packet_data = header + self.auth_tag + self.scrambled_data
             
             return packet_data
             
-        except Exception as e:
+        except struct.error as e:
             raise PacketError(f"Failed to serialize packet: {str(e)}")
     
     @classmethod 
@@ -107,7 +94,7 @@ class OuroborosPacket:
         Deserialize packet from bytes.
         
         Args:
-            data: Raw packet data
+            data: Raw packet bytes
             
         Returns:
             OuroborosPacket instance
@@ -116,33 +103,24 @@ class OuroborosPacket:
             PacketError: If packet is malformed
         """
         try:
-            if len(data) < 32:  # Minimum: 8 (header) + 8 (counter) + 16 (auth_tag)
+            if len(data) < 25:  # Minimum packet size (1 + 4 + 4 + 16)
                 raise PacketError("Packet too short")
             
-            # Unpack header
-            version_type, flags, reserved, padding = struct.unpack('>BBHI', data[:8])
+            # Unpack header: channel_id (1B) + counter (4B) + r (4B)
+            channel_id, counter, r = struct.unpack('>BII', data[:9])
             
-            # Extract version and type
-            version = (version_type >> 4) & 0x0F
-            packet_type = PacketType(version_type & 0x0F)
+            # Extract auth tag (16 bytes)
+            auth_tag = data[9:25]
             
-            # Unpack counter
-            counter = struct.unpack('>Q', data[8:16])[0]
-            
-            # Extract auth tag (last 16 bytes)
-            auth_tag = data[-16:]
-            
-            # Everything in between is scrambled data
-            scrambled_data = data[16:-16] if len(data) > 32 else b""
+            # Everything after header is scrambled data
+            scrambled_data = data[25:] if len(data) > 25 else b""
             
             return cls(
-                version=version,
-                packet_type=packet_type,
-                flags=flags,
-                reserved=reserved,
+                channel_id=channel_id,
                 counter=counter,
-                scrambled_data=scrambled_data,
-                auth_tag=auth_tag
+                r=r,
+                auth_tag=auth_tag,
+                scrambled_data=scrambled_data
             )
             
         except (struct.error, ValueError) as e:
@@ -150,13 +128,34 @@ class OuroborosPacket:
     
     def get_header_bytes(self) -> bytes:
         """
-        Get just the header portion for use in authentication.
+        Get just the header bytes (channel_id + counter + r).
         
         Returns:
-            8-byte header
+            9-byte header
         """
-        version_type = (self.version << 4) | (self.packet_type & 0x0F)
-        return struct.pack('>BBHI', version_type, self.flags, self.reserved, 0)
+        return struct.pack('>BII', self.channel_id, self.counter, self.r)
+    
+    def get_size(self) -> int:
+        """
+        Get total packet size in bytes.
+        
+        Returns:
+            Total packet size
+        """
+        return 25 + len(self.scrambled_data)  # Header (9) + Tag (16) + Data
+    
+    def is_valid(self) -> bool:
+        """
+        Check if packet structure is valid.
+        
+        Returns:
+            True if packet is valid, False otherwise
+        """
+        try:
+            self.__post_init__()
+            return True
+        except PacketError:
+            return False
     
     def is_data_packet(self) -> bool:
         """Check if this is a data packet."""
@@ -171,33 +170,63 @@ class OuroborosPacket:
         return self.packet_type in [PacketType.ACK, PacketType.NACK, PacketType.PING, PacketType.PONG]
 
 
-def create_ack_packet(counter: int) -> OuroborosPacket:
+def create_ack_packet(channel_id: int, counter: int) -> OuroborosPacket:
     """
-    Create an acknowledgment packet for a given counter.
+    Create an acknowledgment packet.
     
     Args:
-        counter: Counter value to acknowledge
+        channel_id: Channel identifier
+        counter: Counter value being acknowledged
         
     Returns:
         ACK packet
     """
     return OuroborosPacket(
-        packet_type=PacketType.ACK,
-        counter=counter
+        channel_id=channel_id,
+        counter=counter,
+        r=0,  # ACK packets don't need random value
+        auth_tag=b'\x00' * 16,  # Placeholder tag
+        scrambled_data=b"",
+        packet_type=PacketType.ACK
     )
 
 
-def create_nack_packet(counter: int) -> OuroborosPacket:
+def create_nack_packet(channel_id: int, counter: int) -> OuroborosPacket:
     """
     Create a negative acknowledgment packet.
     
     Args:
-        counter: Counter value to negative acknowledge
+        channel_id: Channel identifier
+        counter: Counter value being rejected
         
     Returns:
         NACK packet
     """
     return OuroborosPacket(
-        packet_type=PacketType.NACK,
-        counter=counter
+        channel_id=channel_id,
+        counter=counter,
+        r=0,  # NACK packets don't need random value
+        auth_tag=b'\x00' * 16,  # Placeholder tag
+        scrambled_data=b"",
+        packet_type=PacketType.NACK
+    )
+
+
+def create_ping_packet(channel_id: int) -> OuroborosPacket:
+    """
+    Create a ping packet for keep-alive.
+    
+    Args:
+        channel_id: Channel identifier
+        
+    Returns:
+        PING packet
+    """
+    return OuroborosPacket(
+        channel_id=channel_id,
+        counter=0,  # Ping uses counter 0
+        r=0,
+        auth_tag=b'\x00' * 16,
+        scrambled_data=b"",
+        packet_type=PacketType.PING
     )

@@ -2,11 +2,13 @@
 Data Scrambling for Ouroboros Protocol.
 
 Provides an additional layer of obfuscation by scrambling encrypted data
-using a cryptographic permutation seeded by the scrambling key.
+using ChaCha20-seeded Fisher-Yates shuffle for traffic obfuscation.
 """
 
 import hashlib
+import struct
 from typing import List
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
 class ScramblingError(Exception):
@@ -14,40 +16,105 @@ class ScramblingError(Exception):
     pass
 
 
+class ChaCha20PRNG:
+    """
+    ChaCha20-based pseudo-random number generator for deterministic scrambling.
+    """
+    
+    def __init__(self, key: bytes, nonce: bytes = None):
+        """
+        Initialize ChaCha20 PRNG with key.
+        
+        Args:
+            key: 32-byte key for ChaCha20
+            nonce: 16-byte nonce (generated if None)
+        """
+        if len(key) != 32:
+            raise ScramblingError("ChaCha20 key must be 32 bytes")
+        
+        self.key = key
+        self.nonce = nonce if nonce else b'\x00' * 16  # ChaCha20 needs 16-byte nonce
+        self.counter = 0
+        self._buffer = b""
+        self._buffer_pos = 0
+    
+    def random_bytes(self, length: int) -> bytes:
+        """
+        Generate pseudo-random bytes using ChaCha20.
+        
+        Args:
+            length: Number of bytes to generate
+            
+        Returns:
+            Pseudo-random bytes
+        """
+        result = b""
+        
+        while len(result) < length:
+            if self._buffer_pos >= len(self._buffer):
+                # Generate new block
+                cipher = Cipher(
+                    algorithms.ChaCha20(self.key, self.nonce),
+                    mode=None
+                )
+                encryptor = cipher.encryptor()
+                # Encrypt block of zeros to get keystream
+                self._buffer = encryptor.update(b'\x00' * 64)
+                self._buffer_pos = 0
+                
+                # Increment nonce to get different keystream for next block
+                nonce_int = int.from_bytes(self.nonce, 'little')
+                nonce_int = (nonce_int + 1) % (2**128)  # 128-bit nonce
+                self.nonce = nonce_int.to_bytes(16, 'little')
+            
+            # Take bytes from buffer
+            available = len(self._buffer) - self._buffer_pos
+            needed = length - len(result)
+            take = min(available, needed)
+            
+            result += self._buffer[self._buffer_pos:self._buffer_pos + take]
+            self._buffer_pos += take
+        
+        return result
+    
+    def random_uint32(self) -> int:
+        """Generate a pseudo-random 32-bit unsigned integer."""
+        return struct.unpack('<I', self.random_bytes(4))[0]
+
+
 def _generate_permutation(key: bytes, length: int) -> List[int]:
     """
-    Generate a cryptographic permutation based on the scrambling key.
+    Generate a deterministic permutation using ChaCha20-seeded Fisher-Yates shuffle.
     
     Args:
-        key: 32-byte scrambling key
-        length: Length of data to permute
+        key: Scrambling key (32 bytes)
+        length: Length of the permutation
         
     Returns:
-        List representing the permutation indices
+        List representing the permutation
     """
+    if len(key) != 32:
+        raise ScramblingError("Scrambling key must be 32 bytes")
+    
     if length == 0:
         return []
     
-    # Use key to seed deterministic permutation generation
-    indices = list(range(length))
+    # Create initial array [0, 1, 2, ..., length-1]
+    permutation = list(range(length))
     
-    # Generate deterministic "random" sequence from key
-    seed = hashlib.sha256(key + length.to_bytes(4, 'big')).digest()
+    # Initialize ChaCha20 PRNG with the key
+    prng = ChaCha20PRNG(key)
     
-    # Fisher-Yates shuffle with deterministic randomness
+    # Fisher-Yates shuffle using ChaCha20 for randomness
     for i in range(length - 1, 0, -1):
-        # Generate deterministic "random" index
-        hash_input = seed + i.to_bytes(4, 'big')
-        hash_output = hashlib.sha256(hash_input).digest()
-        j = int.from_bytes(hash_output[:4], 'big') % (i + 1)
+        # Generate random index in range [0, i]
+        rand_val = prng.random_uint32()
+        j = rand_val % (i + 1)
         
-        # Swap elements
-        indices[i], indices[j] = indices[j], indices[i]
-        
-        # Update seed for next iteration
-        seed = hashlib.sha256(seed + hash_output[:8]).digest()
+        # Swap elements i and j
+        permutation[i], permutation[j] = permutation[j], permutation[i]
     
-    return indices
+    return permutation
 
 
 def _invert_permutation(permutation: List[int]) -> List[int]:
