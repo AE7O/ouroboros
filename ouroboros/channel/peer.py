@@ -112,6 +112,18 @@ class SecurePeer:
         if self.worker_thread:
             self.worker_thread.join(timeout=1.0)
     
+    def process_received_messages(self):
+        """Process all received messages synchronously."""
+        while not self.message_queue.empty():
+            try:
+                message_data = self.message_queue.get_nowait()
+                self._process_received_message(message_data)
+                self.message_queue.task_done()
+            except queue.Empty:
+                break
+            except Exception as e:
+                print(f"Error processing message: {e}")
+    
     def _message_worker(self):
         """Background worker for processing messages."""
         while self.running:
