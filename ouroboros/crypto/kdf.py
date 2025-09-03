@@ -50,9 +50,6 @@ def derive_session_keys(
         KeyDerivationError: If derivation fails or invalid parameters
     """
     try:
-        if len(root_key) != KEY_LENGTH:
-            raise KeyDerivationError(f"Root key must be {KEY_LENGTH} bytes")
-            
         if counter < 0:
             raise KeyDerivationError("Counter must be non-negative")
             
@@ -61,6 +58,8 @@ def derive_session_keys(
         
         if counter == 0:
             # First message: derive from root key
+            if root_key is None or len(root_key) != KEY_LENGTH:
+                raise KeyDerivationError(f"Root key must be {KEY_LENGTH} bytes for counter 0")
             base_key_enc = root_key
             base_key_scr = root_key
         else:

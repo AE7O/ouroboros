@@ -87,6 +87,10 @@ class SecureBytes:
         """Check if the SecureBytes is still valid (not cleared)."""
         return self._is_valid
     
+    def is_cleared(self) -> bool:
+        """Check if the SecureBytes has been cleared."""
+        return not self._is_valid
+    
     @classmethod
     def generate_random(cls, length: int) -> 'SecureBytes':
         """

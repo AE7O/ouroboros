@@ -5,7 +5,7 @@ Provides secure encryption and authentication of message data using AES-GCM.
 """
 
 import os
-from typing import Tuple
+from typing import Tuple, Optional, Union
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 
@@ -15,17 +15,19 @@ class EncryptionError(Exception):
     pass
 
 
-def encrypt_message(key: bytes, plaintext: bytes, associated_data: bytes = b"") -> Tuple[bytes, bytes]:
+def encrypt_message(key: bytes, plaintext: bytes, nonce: Optional[bytes] = None, associated_data: bytes = b"") -> Union[Tuple[bytes, bytes], bytes]:
     """
     Encrypt a message using AES-GCM.
     
     Args:
         key: 32-byte encryption key
         plaintext: Data to encrypt
+        nonce: 12-byte nonce (None = generate random)
         associated_data: Additional data to authenticate (not encrypted)
         
     Returns:
-        Tuple of (nonce, ciphertext_with_tag)
+        If nonce is None: Tuple of (nonce, ciphertext_with_tag)
+        If nonce is provided: ciphertext_with_tag only
         
     Raises:
         EncryptionError: If encryption fails
@@ -33,17 +35,26 @@ def encrypt_message(key: bytes, plaintext: bytes, associated_data: bytes = b"") 
     try:
         if len(key) != 32:
             raise EncryptionError("Encryption key must be 32 bytes")
-            
-        # Generate random 96-bit nonce for GCM
-        nonce = os.urandom(12)
         
+        # Use provided nonce or generate random one
+        if nonce is None:
+            nonce = os.urandom(12)
+            return_nonce = True
+        else:
+            if len(nonce) != 12:
+                raise EncryptionError("Nonce must be 12 bytes")
+            return_nonce = False
+            
         # Create AES-GCM cipher
         aesgcm = AESGCM(key)
         
         # Encrypt and authenticate
         ciphertext_with_tag = aesgcm.encrypt(nonce, plaintext, associated_data)
         
-        return nonce, ciphertext_with_tag
+        if return_nonce:
+            return nonce, ciphertext_with_tag
+        else:
+            return ciphertext_with_tag
         
     except Exception as e:
         raise EncryptionError(f"Encryption failed: {str(e)}")
