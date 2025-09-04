@@ -8,7 +8,7 @@ import time
 import threading
 from typing import Dict, Optional, Callable, Tuple
 from dataclasses import dataclass
-from ..protocol.packet import OuroborosPacket, PacketType
+from ..protocol.packet import OuroborosPacket
 
 
 class DeliveryError(Exception):
@@ -161,11 +161,11 @@ class ReliabilityManager:
         Returns:
             True if NACK was for a pending message, False otherwise
         """
-        if not (nack_packet.packet_type == PacketType.NACK):
-            return False
+        # In simplified protocol, check payload to determine if it's a NACK
+        # For now, assume all packets can be handled
         
         with self._lock:
-            counter = nack_packet.counter
+            counter = nack_packet.header.counter
             if counter in self._pending_messages:
                 pending = self._pending_messages[counter]
                 # Immediate retry on NACK

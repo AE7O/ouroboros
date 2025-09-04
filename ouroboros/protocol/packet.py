@@ -1,203 +1,260 @@
 """
-Ouroboros Protocol Packet Definition and Handling.
+Packet structure and parsing for Ouroboros Protocol.
 
-Defines the packet structure and provides functions for encoding/decoding
-protocol messages.
+This module defines the packet format and provides functions to build and parse
+protocol messages according to the specification:
+
+header = channel_id (1B) || counter (4B) || r (4B) || tag (16B)
+payload = scrambled_ciphertext
+packet = header || payload
 """
 
 import struct
-from enum import IntEnum
-from typing import Optional, Tuple
+from typing import Tuple, Optional
 from dataclasses import dataclass
 
 
-class PacketType(IntEnum):
-    """Ouroboros packet types."""
-    DATA = 0x01      # Data message
-    ACK = 0x02       # Acknowledgment
-    NACK = 0x03      # Negative acknowledgment
-    PING = 0x04      # Keep-alive ping
-    PONG = 0x05      # Ping response
-
-
-class PacketError(Exception):
-    """Raised when packet operations fail."""
-    pass
+@dataclass
+class PacketHeader:
+    """
+    Ouroboros packet header structure.
+    
+    Fields:
+        channel_id: 1-byte channel identifier
+        counter: 4-byte message counter (big-endian)
+        r: 4-byte per-message random value
+        tag: 16-byte AEAD authentication tag
+    """
+    channel_id: int
+    counter: int
+    r: bytes
+    tag: bytes
+    
+    def __post_init__(self):
+        """Validate header fields."""
+        if not (0 <= self.channel_id <= 255):
+            raise ValueError("Channel ID must be 0-255")
+        if not (0 <= self.counter <= 0xFFFFFFFF):
+            raise ValueError("Counter must be 32-bit unsigned integer")
+        if len(self.r) != 4:
+            raise ValueError("Random value 'r' must be 4 bytes")
+        if len(self.tag) != 16:
+            raise ValueError("Authentication tag must be 16 bytes")
+    
+    @property
+    def size(self) -> int:
+        """Get header size in bytes."""
+        return HEADER_SIZE
+    
+    def to_bytes(self) -> bytes:
+        """Serialize header to bytes."""
+        return struct.pack('!BI4s16s', self.channel_id, self.counter, self.r, self.tag)
+    
+    @classmethod
+    def from_bytes(cls, data: bytes) -> 'PacketHeader':
+        """Deserialize header from bytes."""
+        if len(data) != HEADER_SIZE:
+            raise PacketFormatError(f"Header must be {HEADER_SIZE} bytes, got {len(data)}")
+        
+        try:
+            channel_id, counter, r, tag = struct.unpack('!BI4s16s', data)
+            return cls(channel_id=channel_id, counter=counter, r=r, tag=tag)
+        except struct.error as e:
+            raise PacketFormatError("Invalid header format") from e
 
 
 @dataclass
 class OuroborosPacket:
     """
-    Ouroboros protocol packet structure.
+    Complete Ouroboros protocol packet.
     
-    Packet format:
-    ┌────────────────┬─────────────────┬─────────────────┬──────────────┐
-    │   Header (8B)  │  Counter (8B)   │ Scrambled Data  │  Auth Tag    │
-    ├────────────────┼─────────────────┼─────────────────┼──────────────┤
-    │ Ver│Type│Flags │    MSG_COUNTER  │   CIPHERTEXT    │  GCM_TAG     │
-    └────────────────┴─────────────────┴─────────────────┴──────────────┘
+    Fields:
+        header: Packet header containing metadata
+        payload: Scrambled ciphertext payload
     """
+    header: PacketHeader
+    payload: bytes
     
-    # Protocol version (4 bits)
-    version: int = 1
-    
-    # Packet type (4 bits) 
-    packet_type: PacketType = PacketType.DATA
-    
-    # Flags (8 bits)
-    flags: int = 0
-    
-    # Reserved field (16 bits)
-    reserved: int = 0
-    
-    # Message counter (64 bits)
-    counter: int = 0
-    
-    # Scrambled payload data
-    scrambled_data: bytes = b""
-    
-    # GCM authentication tag (16 bytes)
-    auth_tag: bytes = b""
-    
-    # Original nonce used for encryption (not transmitted)
-    nonce: Optional[bytes] = None
-    
-    def __post_init__(self):
-        """Validate packet fields after initialization."""
-        if not (0 <= self.version <= 15):
-            raise PacketError("Version must be 0-15")
-        if not isinstance(self.packet_type, PacketType):
-            raise PacketError("Invalid packet type")
-        if not (0 <= self.flags <= 255):
-            raise PacketError("Flags must be 0-255")
-        if not (0 <= self.counter <= 2**64 - 1):
-            raise PacketError("Counter must be 64-bit value")
-        if self.auth_tag and len(self.auth_tag) != 16:
-            raise PacketError("Auth tag must be 16 bytes")
+    @property
+    def size(self) -> int:
+        """Get total packet size in bytes."""
+        return len(self.header.to_bytes()) + len(self.payload)
     
     def to_bytes(self) -> bytes:
-        """
-        Serialize packet to bytes for transmission.
-        
-        Returns:
-            Serialized packet data
-        """
-        try:
-            # Pack header (8 bytes total)
-            # Byte 0: Version (4 bits) + Type (4 bits)
-            version_type = (self.version << 4) | (self.packet_type & 0x0F)
-            
-            # Bytes 1-7: Flags (1 byte) + Reserved (2 bytes) + padding (4 bytes)
-            header = struct.pack('>BBHI', version_type, self.flags, self.reserved, 0)
-            
-            # Counter (8 bytes)
-            counter_bytes = struct.pack('>Q', self.counter)
-            
-            # Combine all parts
-            packet_data = header + counter_bytes + self.scrambled_data + self.auth_tag
-            
-            return packet_data
-            
-        except Exception as e:
-            raise PacketError(f"Failed to serialize packet: {str(e)}")
+        """Serialize complete packet to bytes."""
+        return self.header.to_bytes() + self.payload
     
-    @classmethod 
+    @classmethod
     def from_bytes(cls, data: bytes) -> 'OuroborosPacket':
-        """
-        Deserialize packet from bytes.
+        """Deserialize complete packet from bytes."""
+        if len(data) < HEADER_SIZE:
+            raise PacketFormatError(f"Packet too short: {len(data)} bytes")
         
-        Args:
-            data: Raw packet data
-            
-        Returns:
-            OuroborosPacket instance
-            
-        Raises:
-            PacketError: If packet is malformed
-        """
-        try:
-            if len(data) < 32:  # Minimum: 8 (header) + 8 (counter) + 16 (auth_tag)
-                raise PacketError("Packet too short")
-            
-            # Unpack header
-            version_type, flags, reserved, padding = struct.unpack('>BBHI', data[:8])
-            
-            # Extract version and type
-            version = (version_type >> 4) & 0x0F
-            packet_type = PacketType(version_type & 0x0F)
-            
-            # Unpack counter
-            counter = struct.unpack('>Q', data[8:16])[0]
-            
-            # Extract auth tag (last 16 bytes)
-            auth_tag = data[-16:]
-            
-            # Everything in between is scrambled data
-            scrambled_data = data[16:-16] if len(data) > 32 else b""
-            
-            return cls(
-                version=version,
-                packet_type=packet_type,
-                flags=flags,
-                reserved=reserved,
-                counter=counter,
-                scrambled_data=scrambled_data,
-                auth_tag=auth_tag
-            )
-            
-        except (struct.error, ValueError) as e:
-            raise PacketError(f"Failed to deserialize packet: {str(e)}")
-    
-    def get_header_bytes(self) -> bytes:
-        """
-        Get just the header portion for use in authentication.
+        # Parse header
+        header_bytes = data[:HEADER_SIZE]
+        header = PacketHeader.from_bytes(header_bytes)
         
-        Returns:
-            8-byte header
-        """
-        version_type = (self.version << 4) | (self.packet_type & 0x0F)
-        return struct.pack('>BBHI', version_type, self.flags, self.reserved, 0)
+        # Extract payload
+        payload = data[HEADER_SIZE:]
+        
+        return cls(header=header, payload=payload)
     
-    def is_data_packet(self) -> bool:
-        """Check if this is a data packet."""
-        return self.packet_type == PacketType.DATA
-    
-    def is_ack_packet(self) -> bool:
-        """Check if this is an acknowledgment packet."""
-        return self.packet_type == PacketType.ACK
-    
-    def is_control_packet(self) -> bool:
-        """Check if this is a control packet (ACK, NACK, PING, PONG)."""
-        return self.packet_type in [PacketType.ACK, PacketType.NACK, PacketType.PING, PacketType.PONG]
+    def __len__(self) -> int:
+        """Get packet size."""
+        return self.size
 
 
-def create_ack_packet(counter: int) -> OuroborosPacket:
+# Constants
+HEADER_SIZE = 25  # 1 + 4 + 4 + 16 bytes
+MAX_PAYLOAD_SIZE = 65535 - HEADER_SIZE  # Maximum UDP payload minus header
+
+
+class PacketFormatError(Exception):
+    """Raised when packet format is invalid."""
+    pass
+
+
+def build_packet(channel_id: int, counter: int, r: bytes, tag: bytes, 
+                scrambled_payload: bytes) -> OuroborosPacket:
     """
-    Create an acknowledgment packet for a given counter.
+    Build a complete Ouroboros packet.
     
     Args:
-        counter: Counter value to acknowledge
+        channel_id: 1-byte channel identifier
+        counter: 4-byte message counter
+        r: 4-byte per-message random value
+        tag: 16-byte AEAD authentication tag
+        scrambled_payload: Scrambled ciphertext
         
     Returns:
-        ACK packet
+        Complete OuroborosPacket
+        
+    Raises:
+        PacketFormatError: If packet parameters are invalid
     """
-    return OuroborosPacket(
-        packet_type=PacketType.ACK,
-        counter=counter
+    if len(scrambled_payload) > MAX_PAYLOAD_SIZE:
+        raise PacketFormatError(f"Payload too large: {len(scrambled_payload)} bytes")
+    
+    header = PacketHeader(
+        channel_id=channel_id,
+        counter=counter,
+        r=r,
+        tag=tag
     )
+    
+    return OuroborosPacket(header=header, payload=scrambled_payload)
 
 
-def create_nack_packet(counter: int) -> OuroborosPacket:
+def parse_packet(packet_bytes: bytes) -> OuroborosPacket:
     """
-    Create a negative acknowledgment packet.
+    Parse raw bytes into an Ouroboros packet.
     
     Args:
-        counter: Counter value to negative acknowledge
+        packet_bytes: Raw packet data
         
     Returns:
-        NACK packet
+        Parsed OuroborosPacket
+        
+    Raises:
+        PacketFormatError: If packet format is invalid
     """
-    return OuroborosPacket(
-        packet_type=PacketType.NACK,
-        counter=counter
+    return OuroborosPacket.from_bytes(packet_bytes)
+
+
+def extract_header(packet_bytes: bytes) -> PacketHeader:
+    """
+    Extract just the header from packet bytes without parsing payload.
+    
+    Args:
+        packet_bytes: Raw packet data
+        
+    Returns:
+        Parsed PacketHeader
+        
+    Raises:
+        PacketFormatError: If header format is invalid
+    """
+    if len(packet_bytes) < HEADER_SIZE:
+        raise PacketFormatError(f"Packet too short for header: {len(packet_bytes)} bytes")
+    
+    header_bytes = packet_bytes[:HEADER_SIZE]
+    return PacketHeader.from_bytes(header_bytes)
+
+
+def validate_packet_format(packet_bytes: bytes) -> bool:
+    """
+    Validate packet format without full parsing.
+    
+    Args:
+        packet_bytes: Raw packet data
+        
+    Returns:
+        True if packet format is valid
+    """
+    try:
+        parse_packet(packet_bytes)
+        return True
+    except PacketFormatError:
+        return False
+
+
+def get_payload_slice(packet_bytes: bytes) -> bytes:
+    """
+    Extract payload bytes without header parsing.
+    
+    Args:
+        packet_bytes: Raw packet data
+        
+    Returns:
+        Payload bytes (scrambled ciphertext)
+        
+    Raises:
+        PacketFormatError: If packet is too short
+    """
+    if len(packet_bytes) < HEADER_SIZE:
+        raise PacketFormatError(f"Packet too short: {len(packet_bytes)} bytes")
+    
+    return packet_bytes[HEADER_SIZE:]
+
+
+def create_test_packet(channel_id: int = 42, counter: int = 1, 
+                      payload: bytes = b"test") -> OuroborosPacket:
+    """
+    Create a test packet with dummy values.
+    
+    Args:
+        channel_id: Channel ID (default: 42)
+        counter: Message counter (default: 1)
+        payload: Test payload (default: b"test")
+        
+    Returns:
+        Test OuroborosPacket
+    """
+    from ..crypto.utils import generate_random_bytes
+    
+    r = generate_random_bytes(4)
+    tag = generate_random_bytes(16)
+    
+    return build_packet(channel_id, counter, r, tag, payload)
+
+
+def packet_summary(packet: OuroborosPacket) -> str:
+    """
+    Create a human-readable summary of a packet.
+    
+    Args:
+        packet: Packet to summarize
+        
+    Returns:
+        Summary string
+    """
+    header = packet.header
+    return (
+        f"Ouroboros Packet:\n"
+        f"  Channel ID: {header.channel_id}\n"
+        f"  Counter: {header.counter}\n"
+        f"  Random (r): {header.r.hex()}\n"
+        f"  Tag: {header.tag.hex()}\n"
+        f"  Payload size: {len(packet.payload)} bytes\n"
+        f"  Total size: {packet.size} bytes"
     )

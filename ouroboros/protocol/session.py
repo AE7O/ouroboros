@@ -7,11 +7,10 @@ encryption/decryption, scrambling, and packet processing.
 
 from typing import Optional, Tuple
 from ..crypto.kdf import derive_session_keys
-from ..crypto.aes_gcm import encrypt_message, decrypt_message
+from ..crypto import encrypt_message, decrypt_message
 from ..crypto.scramble import scramble_data, unscramble_data
-from ..utils.counter import CounterManager
-from ..utils.memory import SecureBytes
-from .packet import OuroborosPacket, PacketType
+from ..crypto.utils import SecureBytes
+from .packet import OuroborosPacket
 
 
 class SessionError(Exception):
@@ -27,19 +26,28 @@ class OuroborosSession:
     message encryption/decryption, and packet processing.
     """
     
-    def __init__(self, root_key: bytes, is_initiator: bool = True):
+    def __init__(self, root_key: bytes, channel_id: int = 1, is_initiator: bool = True):
         """
         Initialize session with root key.
         
         Args:
             root_key: 32-byte pre-shared root key (used once)
+            channel_id: 1-byte channel identifier (default 1)
             is_initiator: Whether this is the initiating side
         """
         if len(root_key) != 32:
             raise SessionError("Root key must be 32 bytes")
+        if not (0 <= channel_id <= 255):
+            raise SessionError("Channel ID must be 0-255")
         
+        # Initialize session
+        self.channel_id = channel_id
         self.is_initiator = is_initiator
-        self.counter_manager = CounterManager()
+        
+        # Simple counter management
+        self.send_counter = 0
+        self.received_counters = set()
+        self.max_counter_window = 1000  # Prevent memory growth
         
         # Use root key once to derive initial session keys
         self._current_enc_key, self._current_scr_key = derive_session_keys(root_key, 0)
@@ -71,7 +79,8 @@ class OuroborosSession:
         
         try:
             # Get next counter for this message
-            counter = self.counter_manager.get_next_send_counter()
+            counter = self.send_counter
+            self.send_counter += 1
             
             # Derive new session keys for this message
             new_enc_key, new_scr_key = derive_session_keys(
@@ -94,13 +103,19 @@ class OuroborosSession:
             # Scramble the ciphertext
             scrambled_data = scramble_data(new_scr_key, ciphertext)
             
+            # Create packet header
+            from .packet import PacketHeader
+            header = PacketHeader(
+                channel_id=self.channel_id,
+                counter=counter,
+                r=nonce[:4],  # Use first 4 bytes of nonce as 'r'
+                tag=auth_tag
+            )
+            
             # Create packet
             packet = OuroborosPacket(
-                packet_type=PacketType.DATA,
-                counter=counter,
-                scrambled_data=scrambled_data,
-                auth_tag=auth_tag,
-                nonce=nonce  # Store nonce for reference (not transmitted)
+                header=header,
+                payload=scrambled_data
             )
             
             return packet
@@ -129,8 +144,16 @@ class OuroborosSession:
         
         try:
             # Validate counter for replay protection
-            if not self.counter_manager.validate_received_counter(packet.counter):
-                raise SessionError("Invalid or replayed counter")
+            if packet.counter in self.received_counters:
+                raise SessionError(f"Replay attack detected - counter {packet.counter} already seen")
+            
+            self.received_counters.add(packet.counter)
+            
+            # Prevent memory growth by limiting window size
+            if len(self.received_counters) > self.max_counter_window:
+                # Remove oldest counters (simplified approach)
+                sorted_counters = sorted(self.received_counters)
+                self.received_counters = set(sorted_counters[-self.max_counter_window//2:])
             
             # Derive session keys for this message counter
             # Note: For received messages, we need to track the key chain
@@ -183,9 +206,17 @@ class OuroborosSession:
         Returns:
             ACK packet
         """
+        # Create empty ACK packet
+        from .packet import PacketHeader
+        header = PacketHeader(
+            channel_id=self.channel_id,
+            counter=ack_counter,
+            r=b'\x00' * 4,  # Empty r for ACK
+            tag=b'\x00' * 16  # Empty tag for ACK
+        )
         return OuroborosPacket(
-            packet_type=PacketType.ACK,
-            counter=ack_counter
+            header=header,
+            payload=b''  # Empty payload for ACK
         )
     
     def get_stats(self) -> dict:
@@ -198,7 +229,8 @@ class OuroborosSession:
         return {
             'initialized': self._initialized,
             'is_initiator': self.is_initiator,
-            'counter_stats': self.counter_manager.get_stats()
+            'send_counter': self.send_counter,
+            'received_counter_count': len(self.received_counters)
         }
     
     def __del__(self):
