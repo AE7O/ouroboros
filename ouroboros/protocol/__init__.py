@@ -8,7 +8,6 @@ This module provides the core protocol functionality including:
 """
 
 from .packet import OuroborosPacket, PacketFormatError
-from .session import OuroborosSession, SessionError
 from .reliability import ReliabilityManager, DeliveryError
 
 __all__ = [
