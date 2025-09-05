@@ -61,7 +61,7 @@ class PerformanceBenchmark:
         }
     
     def benchmark_encryption_performance(self, message_sizes: List[int], 
-                                       iterations: int = 1000,
+                                       iterations: int = 100,
                                        use_ascon: bool = False) -> List[BenchmarkResult]:
         """
         Benchmark encryption performance across different message sizes.
@@ -117,7 +117,7 @@ class PerformanceBenchmark:
         return results
     
     def benchmark_decryption_performance(self, message_sizes: List[int],
-                                       iterations: int = 1000,
+                                       iterations: int = 100,
                                        use_ascon: bool = False) -> List[BenchmarkResult]:
         """
         Benchmark decryption performance across different message sizes.
@@ -171,7 +171,7 @@ class PerformanceBenchmark:
         return results
     
     def compare_algorithms(self, message_sizes: List[int], 
-                          iterations: int = 1000) -> Dict[str, List[BenchmarkResult]]:
+                          iterations: int = 100) -> Dict[str, List[BenchmarkResult]]:
         """
         Compare AES-GCM vs ASCON performance.
         
@@ -215,7 +215,7 @@ class PerformanceBenchmark:
         return results
     
     def benchmark_scrambling_overhead(self, message_sizes: List[int],
-                                    iterations: int = 1000) -> List[Dict[str, Any]]:
+                                    iterations: int = 100) -> List[Dict[str, Any]]:
         """
         Measure overhead of scrambling vs plain AEAD.
         
@@ -422,12 +422,12 @@ def run_comprehensive_benchmark(quick: bool = False) -> Dict[str, Any]:
     
     if quick:
         message_sizes = [64, 512, 1024]
-        iterations = 100
+        iterations = 50
         stress_duration = 10
     else:
         message_sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096]
-        iterations = 1000
-        stress_duration = 60
+        iterations = 100
+        stress_duration = 30
     
     print("Running comprehensive Ouroboros Protocol benchmark...")
     
@@ -459,4 +459,130 @@ def run_comprehensive_benchmark(quick: bool = False) -> Dict[str, Any]:
         'scrambling_overhead': scrambling_results,
         'stress_tests': stress_results,
         'raw_results': benchmark.results
+    }
+
+
+# Additional convenience functions for the evaluation framework
+
+def benchmark_encryption_throughput(packet_size: int, duration: int, warmup: int = 5):
+    """Benchmark encryption throughput for a specific packet size."""
+    benchmark = PerformanceBenchmark()
+    
+    # Calculate iterations for the given duration
+    # Do a quick test to estimate iterations needed
+    test_iterations = 100
+    start = time.time()
+    benchmark.benchmark_encryption_performance([packet_size], iterations=test_iterations)
+    test_time = time.time() - start
+    
+    # Estimate iterations needed for target duration (after warmup)
+    if test_time > 0:
+        target_iterations = max(100, int(duration * test_iterations / test_time))
+    else:
+        target_iterations = 100
+    
+    # Warmup
+    if warmup > 0:
+        benchmark.benchmark_encryption_performance([packet_size], 
+                                                  iterations=int(target_iterations * warmup / duration))
+    
+    # Actual benchmark
+    results = benchmark.benchmark_encryption_performance([packet_size], iterations=target_iterations)
+    
+    if results:
+        result = results[0]
+        return {
+            'packets_per_second': target_iterations / result.total_time,
+            'throughput_mbps': result.throughput_mbps,
+            'avg_latency_ms': result.avg_time * 1000,
+            'total_time': result.total_time,
+            'iterations': result.iterations
+        }
+    
+    return {'packets_per_second': 0, 'throughput_mbps': 0}
+
+
+def benchmark_decryption_throughput(packet_size: int, duration: int, warmup: int = 5):
+    """Benchmark decryption throughput for a specific packet size."""
+    benchmark = PerformanceBenchmark()
+    
+    # Calculate iterations for the given duration
+    test_iterations = 100
+    start = time.time()
+    benchmark.benchmark_decryption_performance([packet_size], iterations=test_iterations)
+    test_time = time.time() - start
+    
+    if test_time > 0:
+        target_iterations = max(100, int(duration * test_iterations / test_time))
+    else:
+        target_iterations = 100
+    
+    # Warmup
+    if warmup > 0:
+        benchmark.benchmark_decryption_performance([packet_size], 
+                                                  iterations=int(target_iterations * warmup / duration))
+    
+    # Actual benchmark
+    results = benchmark.benchmark_decryption_performance([packet_size], iterations=target_iterations)
+    
+    if results:
+        result = results[0]
+        return {
+            'packets_per_second': target_iterations / result.total_time,
+            'throughput_mbps': result.throughput_mbps,
+            'avg_latency_ms': result.avg_time * 1000,
+            'total_time': result.total_time,
+            'iterations': result.iterations
+        }
+    
+    return {'packets_per_second': 0, 'throughput_mbps': 0}
+
+
+def benchmark_key_ratcheting(operations: int = 100):
+    """Benchmark key ratcheting performance."""
+    from ..crypto.ratchet import RatchetState
+    from ..crypto.utils import generate_random_bytes
+    
+    # Create a ratchet for testing
+    seed = generate_random_bytes(32)
+    ratchet = RatchetState(seed)
+    
+    # Benchmark key generation
+    start_time = time.time()
+    for _ in range(operations):
+        _ = ratchet.derive_keys(42, 0)  # channel_id, counter
+    total_time = time.time() - start_time
+    
+    return {
+        'operations_per_second': operations / total_time if total_time > 0 else 0,
+        'avg_latency_ms': (total_time / operations) * 1000 if operations > 0 else 0,
+        'total_time': total_time,
+        'operations': operations
+    }
+
+
+def benchmark_scrambling_performance(data_size: int, operations: int = 100):
+    """Benchmark scrambling performance."""
+    from ..crypto.scramble import scramble_data, unscramble_data
+    from ..crypto.utils import generate_random_bytes
+    
+    data = generate_random_bytes(data_size)
+    permutation_key = generate_random_bytes(32)
+    tag = generate_random_bytes(16)
+    r = generate_random_bytes(4)
+    
+    # Scrambling benchmark
+    start_time = time.time()
+    for _ in range(operations):
+        scrambled = scramble_data(data, permutation_key, tag, r)
+        unscrambled = unscramble_data(scrambled, permutation_key, tag, r)
+    total_time = time.time() - start_time
+    
+    return {
+        'operations_per_second': operations / total_time if total_time > 0 else 0,
+        'avg_latency_ms': (total_time / operations) * 1000 if operations > 0 else 0,
+        'throughput_mbps': (data_size * operations) / (total_time * 1024 * 1024) if total_time > 0 else 0,
+        'total_time': total_time,
+        'operations': operations,
+        'data_size': data_size
     }

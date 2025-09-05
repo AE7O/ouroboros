@@ -1,0 +1,139 @@
+{
+  "configuration": {
+    "duration_seconds": 60,
+    "warmup_seconds": 10,
+    "packet_sizes": [
+      64,
+      256,
+      1024,
+      1500
+    ],
+    "include_memory": true
+  },
+  "throughput": {
+    "64": {
+      "encryption": {
+        "packets_per_second": 9153.093846797901,
+        "throughput_mbps": 0.5586605131102235,
+        "avg_latency_ms": 0.10925267638874235,
+        "total_time": 23.044557778001035,
+        "iterations": 210929
+      },
+      "decryption": {
+        "packets_per_second": 360231.61445462366,
+        "throughput_mbps": 21.986792874427714,
+        "avg_latency_ms": 0.0027759917782728765,
+        "total_time": 0.5459654070000397,
+        "iterations": 196674
+      }
+    },
+    "256": {
+      "encryption": {
+        "packets_per_second": 3340.912805123614,
+        "throughput_mbps": 0.8156525403133823,
+        "avg_latency_ms": 0.2993193951265064,
+        "total_time": 37.07190436399833,
+        "iterations": 123854
+      },
+      "decryption": {
+        "packets_per_second": 357024.9405011394,
+        "throughput_mbps": 87.16429211453598,
+        "avg_latency_ms": 0.002800924771799825,
+        "total_time": 0.30992232599965064,
+        "iterations": 110650
+      }
+    },
+    "1024": {
+      "encryption": {
+        "packets_per_second": 940.0557244836169,
+        "throughput_mbps": 0.9180231684410322,
+        "avg_latency_ms": 1.063766725689917,
+        "total_time": 52.542629882002075,
+        "iterations": 49393
+      },
+      "decryption": {
+        "packets_per_second": 284522.46386421844,
+        "throughput_mbps": 277.8539686174008,
+        "avg_latency_ms": 0.003514660974105813,
+        "total_time": 0.15147134400103823,
+        "iterations": 43097
+      }
+    },
+    "1500": {
+      "encryption": {
+        "packets_per_second": 647.1702282016092,
+        "throughput_mbps": 0.9257844374679697,
+        "avg_latency_ms": 1.54518850902467,
+        "total_time": 55.56034321900006,
+        "iterations": 35957
+      },
+      "decryption": {
+        "packets_per_second": 334656.01030025457,
+        "throughput_mbps": 478.7292627815073,
+        "avg_latency_ms": 0.002988142956413054,
+        "total_time": 0.10325826800180948,
+        "iterations": 34556
+      }
+    }
+  },
+  "latency": {
+    "key_generation": {
+      "mean_us": 22.835959898657165,
+      "median_us": 20.763500288012438,
+      "p95_us": 32.064999686554074,
+      "p99_us": 126.06800009962171,
+      "min_us": 20.490999304456636,
+      "max_us": 126.06800009962171,
+      "std_us": 11.064420435613282
+    },
+    "scrambling_256b": {
+      "mean_us": 53320.44013997802,
+      "median_us": 48653.45849975711,
+      "p95_us": 94234.29500020575,
+      "p99_us": 100539.28100023768,
+      "min_us": 48171.673999604536,
+      "max_us": 100539.28100023768,
+      "std_us": 11558.187113623473
+    },
+    "scrambling_1024b": {
+      "mean_us": 205565.52936996013,
+      "median_us": 194568.07499955175,
+      "p95_us": 254054.42599731032,
+      "p99_us": 316137.96400051797,
+      "min_us": 191490.52499778918,
+      "max_us": 316137.96400051797,
+      "std_us": 22174.604807201737
+    },
+    "scrambling_4096b": {
+      "mean_us": 814791.6907098988,
+      "median_us": 800329.0309989097,
+      "p95_us": 917308.893000154,
+      "p99_us": 966536.943000392,
+      "min_us": 764097.243998549,
+      "max_us": 966536.943000392,
+      "std_us": 46879.244375725706
+    }
+  },
+  "memory": {
+    "64": {
+      "before_mb": 119.4765625,
+      "after_mb": 120.3515625,
+      "delta_mb": 0.875
+    },
+    "256": {
+      "before_mb": 120.3515625,
+      "after_mb": 120.3515625,
+      "delta_mb": 0.0
+    },
+    "1024": {
+      "before_mb": 120.3515625,
+      "after_mb": 120.3515625,
+      "delta_mb": 0.0
+    },
+    "1500": {
+      "before_mb": 120.3515625,
+      "after_mb": 120.3515625,
+      "delta_mb": 0.0
+    }
+  }
+}

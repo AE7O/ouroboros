@@ -1,0 +1,66 @@
+{
+  "64": {
+    "encryption": {
+      "packets_per_second": 9153.093846797901,
+      "throughput_mbps": 0.5586605131102235,
+      "avg_latency_ms": 0.10925267638874235,
+      "total_time": 23.044557778001035,
+      "iterations": 210929
+    },
+    "decryption": {
+      "packets_per_second": 360231.61445462366,
+      "throughput_mbps": 21.986792874427714,
+      "avg_latency_ms": 0.0027759917782728765,
+      "total_time": 0.5459654070000397,
+      "iterations": 196674
+    }
+  },
+  "256": {
+    "encryption": {
+      "packets_per_second": 3340.912805123614,
+      "throughput_mbps": 0.8156525403133823,
+      "avg_latency_ms": 0.2993193951265064,
+      "total_time": 37.07190436399833,
+      "iterations": 123854
+    },
+    "decryption": {
+      "packets_per_second": 357024.9405011394,
+      "throughput_mbps": 87.16429211453598,
+      "avg_latency_ms": 0.002800924771799825,
+      "total_time": 0.30992232599965064,
+      "iterations": 110650
+    }
+  },
+  "1024": {
+    "encryption": {
+      "packets_per_second": 940.0557244836169,
+      "throughput_mbps": 0.9180231684410322,
+      "avg_latency_ms": 1.063766725689917,
+      "total_time": 52.542629882002075,
+      "iterations": 49393
+    },
+    "decryption": {
+      "packets_per_second": 284522.46386421844,
+      "throughput_mbps": 277.8539686174008,
+      "avg_latency_ms": 0.003514660974105813,
+      "total_time": 0.15147134400103823,
+      "iterations": 43097
+    }
+  },
+  "1500": {
+    "encryption": {
+      "packets_per_second": 647.1702282016092,
+      "throughput_mbps": 0.9257844374679697,
+      "avg_latency_ms": 1.54518850902467,
+      "total_time": 55.56034321900006,
+      "iterations": 35957
+    },
+    "decryption": {
+      "packets_per_second": 334656.01030025457,
+      "throughput_mbps": 478.7292627815073,
+      "avg_latency_ms": 0.002988142956413054,
+      "total_time": 0.10325826800180948,
+      "iterations": 34556
+    }
+  }
+}

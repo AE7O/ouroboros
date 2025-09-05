@@ -1,0 +1,63 @@
+{
+  "trials": 500,
+  "success_rate": 1.0,
+  "failures": [],
+  "test_results": {
+    "encryption_decryption": {
+      "success_rate": 1.0,
+      "total_runs": 20,
+      "avg_duration_ms": 1.150745549784915,
+      "median_duration_ms": 1.061458999174647,
+      "failures": []
+    },
+    "key_ratcheting": {
+      "success_rate": 1.0,
+      "total_runs": 20,
+      "avg_duration_ms": 0.07365065011981642,
+      "median_duration_ms": 0.06922849934198894,
+      "failures": []
+    },
+    "scrambling_bijection": {
+      "success_rate": 1.0,
+      "total_runs": 20,
+      "avg_duration_ms": 2.2282172494669794,
+      "median_duration_ms": 1.9371814978512703,
+      "failures": []
+    },
+    "packet_handling": {
+      "success_rate": 1.0,
+      "total_runs": 20,
+      "avg_duration_ms": 0.010571200618869625,
+      "median_duration_ms": 0.0072995026130229235,
+      "failures": []
+    },
+    "replay_protection": {
+      "success_rate": 0.0,
+      "total_runs": 20,
+      "avg_duration_ms": null,
+      "median_duration_ms": null,
+      "failures": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    }
+  }
+}

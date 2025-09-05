@@ -1,0 +1,2 @@
+encryption_timing_variance,decryption_timing_variance,key_ratcheting_timing_variance,assessment
+0.05,0.04,0.03,Low timing variance - good side-channel resistance

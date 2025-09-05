@@ -254,3 +254,7 @@ def demo_file_transfer():
     
     print("File transfer demo would require two processes.")
     print("Run this with two instances to test peer-to-peer file transfer.")
+
+
+if __name__ == "__main__":
+    demo_file_transfer()

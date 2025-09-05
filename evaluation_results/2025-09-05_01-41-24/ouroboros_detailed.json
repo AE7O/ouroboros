@@ -1,0 +1,145 @@
+{
+  "protocol": "Ouroboros",
+  "aead_algorithm": "ASCON-128a",
+  "ratchet_algorithm": "ASCON-Hash256",
+  "scrambling_algorithm": "Fisher-Yates + ChaCha20",
+  "iterations": 5,
+  "isolated_operations": {
+    "ratchet": {
+      "operation": "ratchet_derive_keys",
+      "mean_ms": 2.051456999470247,
+      "median_ms": 1.9508529985614587,
+      "std_ms": 0.2809488198199317,
+      "min_ms": 1.8991440010722727,
+      "max_ms": 2.5520130002405494,
+      "p95_ms": 2.5520130002405494,
+      "p99_ms": 2.5520130002405494,
+      "ops_per_sec": 487.4584260153796,
+      "samples": 5
+    },
+    "aead_256B": {
+      "message_size_bytes": 256,
+      "aead_algorithm": "ASCON-128a",
+      "operations": {
+        "encrypt": {
+          "operation": "aead_encrypt",
+          "mean_ms": 0.7533831994805951,
+          "median_ms": 0.7388129997707438,
+          "std_ms": 0.037240030420568886,
+          "min_ms": 0.7280360005097464,
+          "max_ms": 0.8187349994841497,
+          "p95_ms": 0.8187349994841497,
+          "p99_ms": 0.8187349994841497,
+          "ops_per_sec": 1327.3457659919015,
+          "samples": 5
+        },
+        "decrypt": {
+          "operation": "aead_decrypt",
+          "mean_ms": 0.7852854003431275,
+          "median_ms": 0.7673340005567297,
+          "std_ms": 0.037869097407515616,
+          "min_ms": 0.7563520011899527,
+          "max_ms": 0.8484289974148851,
+          "p95_ms": 0.8484289974148851,
+          "p99_ms": 0.8484289974148851,
+          "ops_per_sec": 1273.422375563144,
+          "samples": 5
+        }
+      }
+    },
+    "scrambling_256B": {
+      "data_size_bytes": 256,
+      "operations": {
+        "scramble": {
+          "operation": "scramble",
+          "mean_ms": 0.2619692008011043,
+          "median_ms": 0.24194900106522255,
+          "std_ms": 0.04615565230049334,
+          "min_ms": 0.23662700186832808,
+          "max_ms": 0.3441320004640147,
+          "p95_ms": 0.3441320004640147,
+          "p99_ms": 0.3441320004640147,
+          "ops_per_sec": 3817.2426260109605,
+          "samples": 5
+        },
+        "unscramble": {
+          "operation": "unscramble",
+          "mean_ms": 0.27041139983339235,
+          "median_ms": 0.2450500032864511,
+          "std_ms": 0.04717369964398809,
+          "min_ms": 0.24360899988096207,
+          "max_ms": 0.35310499879415147,
+          "p95_ms": 0.35310499879415147,
+          "p99_ms": 0.35310499879415147,
+          "ops_per_sec": 3698.068944638157,
+          "samples": 5
+        }
+      }
+    }
+  },
+  "full_protocol": {
+    "256B": {
+      "protocol": "Full Ouroboros",
+      "message_size_bytes": 256,
+      "aead_algorithm": "ASCON-128a",
+      "header_overhead_bytes": 25,
+      "iterations": 5,
+      "operations": {
+        "encrypt_pipeline": {
+          "operation": "encrypt_pipeline",
+          "mean_ms": 2.9787857994961087,
+          "median_ms": 2.966504001960857,
+          "std_ms": 0.04135706541999747,
+          "min_ms": 2.950304999103537,
+          "max_ms": 3.0510539982060436,
+          "p95_ms": 3.0510539982060436,
+          "p99_ms": 3.0510539982060436,
+          "ops_per_sec": 335.70725366327446,
+          "samples": 5
+        },
+        "decrypt_pipeline": {
+          "operation": "decrypt_pipeline",
+          "mean_ms": 2.9941679997136816,
+          "median_ms": 2.9605720010295045,
+          "std_ms": 0.07946806026862327,
+          "min_ms": 2.9466949999914505,
+          "max_ms": 3.135449998808326,
+          "p95_ms": 3.135449998808326,
+          "p99_ms": 3.135449998808326,
+          "ops_per_sec": 333.98259553092055,
+          "samples": 5
+        },
+        "full_roundtrip": {
+          "operation": "full_roundtrip",
+          "mean_ms": 6.573677999404026,
+          "median_ms": 6.201410997164203,
+          "std_ms": 1.1062967274966027,
+          "min_ms": 5.896288999792887,
+          "max_ms": 8.531510000466369,
+          "p95_ms": 8.531510000466369,
+          "p99_ms": 8.531510000466369,
+          "ops_per_sec": 152.12184108967014,
+          "samples": 5
+        }
+      }
+    }
+  },
+  "overhead_analysis": {
+    "header_size_bytes": 25,
+    "header_breakdown": {
+      "channel_id": 1,
+      "counter": 4,
+      "random_r": 4,
+      "aead_tag": 16
+    },
+    "per_message_overhead": {
+      "256B": {
+        "message_size_bytes": 256,
+        "overhead_bytes": 25,
+        "overhead_percent": 9.765625,
+        "total_packet_size_bytes": 281,
+        "efficiency_percent": 91.10320284697508
+      }
+    }
+  }
+}

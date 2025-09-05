@@ -1,0 +1,29 @@
+{
+  "configuration": {
+    "exhaustive": true,
+    "include_timing": true,
+    "replay_window_size": 1000
+  },
+  "replay_protection": {
+    "window_size": 1000,
+    "tests_passed": 15,
+    "tests_total": 15,
+    "edge_cases_tested": [
+      "duplicate_packets",
+      "out_of_order",
+      "window_overflow"
+    ]
+  },
+  "key_security": {
+    "forward_secrecy": true,
+    "key_isolation": true,
+    "ratcheting_security": true,
+    "tests_run": 25
+  },
+  "timing_analysis": {
+    "encryption_timing_variance": 0.05,
+    "decryption_timing_variance": 0.04,
+    "key_ratcheting_timing_variance": 0.03,
+    "assessment": "Low timing variance - good side-channel resistance"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "success_rate": 1.0,
+  "total_runs": 20,
+  "avg_duration_ms": 0.010571200618869625,
+  "median_duration_ms": 0.0072995026130229235,
+  "failures": []
+}
