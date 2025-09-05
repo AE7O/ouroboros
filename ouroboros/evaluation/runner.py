@@ -238,7 +238,7 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
         pqc_operations = 100
     
     # Run correctness evaluation
-    print("📋 Phase 1/4: Correctness evaluation...")
+    print("📋 Phase 1/5: Correctness evaluation...")
     results['correctness'] = run_correctness_experiments(
         output_root=output_root / 'correctness',
         trials=correctness_trials,
@@ -248,7 +248,7 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
     )
     
     # Run performance evaluation
-    print("📋 Phase 2/4: Performance evaluation...")
+    print("📋 Phase 2/5: Performance evaluation...")
     packet_sizes = [64, 256, 1024, 1500] if not quick else [256, 1024]
     results['performance'] = run_performance_experiments(
         output_root=output_root / 'performance',
@@ -261,7 +261,7 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
     )
     
     # Run security evaluation
-    print("📋 Phase 3/4: Security evaluation...")
+    print("📋 Phase 3/5: Security evaluation...")
     results['security'] = run_security_experiments(
         output_root=output_root / 'security',
         exhaustive=not quick,
@@ -270,9 +270,9 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
         format=format
     )
     
-    # Run PQC comparison (if requested and available)
+    # Run PQC benchmarking (if requested and available)
     if not skip_pqc:
-        print("📋 Phase 4/4: Post-quantum cryptography comparison...")
+        print("📋 Phase 4/5: Post-quantum cryptography benchmarking...")
         try:
             algorithms = ['kyber512', 'kyber768', 'dilithium2'] if quick else [
                 'kyber512', 'kyber768', 'kyber1024', 'dilithium2', 'dilithium3'
@@ -285,8 +285,31 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
             print(f"⚠️  PQC evaluation failed: {e}")
             results['pqc'] = {'status': 'failed', 'error': str(e)}
     else:
-        print("📋 Phase 4/4: Skipped (--skip-pqc)")
+        print("📋 Phase 4/5: PQC benchmarking skipped (--skip-pqc)")
         results['pqc'] = {'status': 'skipped', 'reason': 'user requested skip'}
+    
+    # Run Ouroboros vs PQC comparison (if requested and available)
+    if not skip_pqc:
+        print("📋 Phase 5/5: Ouroboros vs PQC comparative analysis...")
+        try:
+            packet_sizes = [256, 1024] if quick else [256, 1024, 4096]
+            comparison_duration = 3 if quick else 5
+            comparison_iterations = 50 if quick else 100
+            results['comparison'] = run_comparison_experiments(
+                output_root=output_root / 'comparison',
+                duration=comparison_duration,
+                packet_sizes=packet_sizes,
+                iterations=comparison_iterations,
+                format=format,
+                generate_charts=generate_charts
+            )
+        except Exception as e:
+            print(f"⚠️  PQC comparison failed: {e}")
+            results['comparison'] = {'status': 'failed', 'error': str(e)}
+    else:
+        print("📋 Phase 5/5: PQC comparison skipped (--skip-pqc)")
+        results['comparison'] = {'status': 'skipped', 'reason': 'user requested skip'}
+    
     return results
 
 

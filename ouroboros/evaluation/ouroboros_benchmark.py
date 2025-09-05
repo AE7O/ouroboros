@@ -405,52 +405,79 @@ class OuroborosComparativeBenchmark:
         return overhead_analysis
 
 
-def create_ouroboros_vs_pqc_comparison_data(ouroboros_results: Dict[str, Any],
-                                           pqc_results: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create structured comparison data between Ouroboros and PQC.
+def create_ouroboros_vs_pqc_comparison_data(ouroboros_results: Dict[str, Any], 
+                                          pqc_results: Dict[str, Any]) -> Dict[str, Any]:
+    """Create comparison data structure for Ouroboros vs PQC analysis."""
     
-    Args:
-        ouroboros_results: Ouroboros benchmark results
-        pqc_results: PQC benchmark results
-        
-    Returns:
-        Structured comparison data
-    """
-    comparison = {
+    # Extract Ouroboros summary
+    ouroboros_summary = {}
+    if 'full_protocol' in ouroboros_results:
+        for size, data in ouroboros_results['full_protocol'].items():
+            ops = data.get('operations', {})
+            roundtrip = ops.get('full_roundtrip', {})
+            ouroboros_summary[size] = {
+                'full_roundtrip_ms': roundtrip.get('mean_ms', 0.0),
+                'throughput_ops_per_sec': roundtrip.get('ops_per_sec', 0.0),
+                'overhead_bytes': ouroboros_results.get('overhead_analysis', {}).get('header_size_bytes', 25)
+            }
+    
+    # Extract PQC summary - THIS WAS THE MISSING PIECE
+    pqc_summary = {}
+    if 'algorithms' in pqc_results:
+        for alg_name, alg_data in pqc_results['algorithms'].items():
+            if alg_data.get('status') == 'ok':
+                ops = alg_data.get('operations', {})
+                sizes = alg_data.get('sizes', {})
+                alg_type = alg_data.get('type', '')
+                
+                if alg_type == 'KEM':
+                    # KEM: keygen + encaps + decaps
+                    keygen_ms = ops.get('keygen', {}).get('mean_ms', 0.0)
+                    encaps_ms = ops.get('encaps', {}).get('mean_ms', 0.0) 
+                    decaps_ms = ops.get('decaps', {}).get('mean_ms', 0.0)
+                    full_kem_ms = keygen_ms + encaps_ms + decaps_ms
+                    
+                    pqc_summary[alg_name] = {
+                        'type': 'KEM',
+                        'keygen_ms': keygen_ms,
+                        'encaps_ms': encaps_ms,
+                        'decaps_ms': decaps_ms,
+                        'full_kem_roundtrip_ms': full_kem_ms,
+                        'throughput_ops_per_sec': 1000.0 / full_kem_ms if full_kem_ms > 0 else 0.0,
+                        'public_key_bytes': sizes.get('public_key_bytes', 0),
+                        'secret_key_bytes': sizes.get('secret_key_bytes', 0),
+                        'ciphertext_bytes': sizes.get('ciphertext_bytes', 0)
+                    }
+                    
+                elif alg_type == 'SIG':
+                    # SIG: keygen + sign + verify
+                    keygen_ms = ops.get('keygen', {}).get('mean_ms', 0.0)
+                    sign_ms = ops.get('sign', {}).get('mean_ms', 0.0)
+                    verify_ms = ops.get('verify', {}).get('mean_ms', 0.0)
+                    full_sig_ms = keygen_ms + sign_ms + verify_ms
+                    
+                    pqc_summary[alg_name] = {
+                        'type': 'SIG',
+                        'keygen_ms': keygen_ms,
+                        'sign_ms': sign_ms,
+                        'verify_ms': verify_ms,
+                        'full_sig_roundtrip_ms': full_sig_ms,
+                        'throughput_ops_per_sec': 1000.0 / full_sig_ms if full_sig_ms > 0 else 0.0,
+                        'public_key_bytes': sizes.get('public_key_bytes', 0),
+                        'secret_key_bytes': sizes.get('secret_key_bytes', 0),
+                        'signature_bytes': sizes.get('signature_bytes', 0)
+                    }
+    
+    return {
         'comparison_type': 'Ouroboros vs PQC',
         'timestamp': time.time(),
         'methodology': 'Same timing harness, equivalent security assumptions',
-        'ouroboros_summary': {},
-        'pqc_summary': {},
-        'comparative_analysis': {}
+        'ouroboros_summary': ouroboros_summary,
+        'pqc_summary': pqc_summary,  # Now populated!
+        'comparative_analysis': {
+            'speed_advantage': 'Ouroboros symmetric operations vs PQC asymmetric operations',
+            'overhead_advantage': 'Ouroboros 25-byte header vs PQC keys+signatures', 
+            'security_model': 'Ouroboros: pre-shared keys, PQC: public-key cryptography',
+            'use_case_fit': 'Ouroboros optimized for IoT, PQC for general internet'
+        }
     }
-    
-    # Extract key metrics for comparison
-    if 'full_protocol' in ouroboros_results:
-        for size, data in ouroboros_results['full_protocol'].items():
-            if 'operations' in data and 'full_roundtrip' in data['operations']:
-                comparison['ouroboros_summary'][size] = {
-                    'full_roundtrip_ms': data['operations']['full_roundtrip']['mean_ms'],
-                    'throughput_ops_per_sec': data['operations']['full_roundtrip']['ops_per_sec'],
-                    'overhead_bytes': data.get('header_overhead_bytes', 25)
-                }
-    
-    if 'full_protocol' in pqc_results:
-        for size, data in pqc_results['full_protocol'].items():
-            if 'operations' in data and 'full_protocol' in data['operations']:
-                comparison['pqc_summary'][size] = {
-                    'full_protocol_ms': data['operations']['full_protocol']['mean_ms'],
-                    'throughput_ops_per_sec': data['operations']['full_protocol']['ops_per_sec'],
-                    'overhead_bytes': data.get('total_overhead_bytes', 0)
-                }
-    
-    # Generate comparative insights
-    comparison['comparative_analysis'] = {
-        'speed_advantage': 'Ouroboros symmetric operations vs PQC asymmetric operations',
-        'overhead_advantage': 'Ouroboros 25-byte header vs PQC keys+signatures',
-        'security_model': 'Ouroboros: pre-shared keys, PQC: public-key cryptography',
-        'use_case_fit': 'Ouroboros optimized for IoT, PQC for general internet'
-    }
-    
-    return comparison

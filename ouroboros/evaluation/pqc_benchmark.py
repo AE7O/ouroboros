@@ -118,7 +118,7 @@ class PQCBenchmark:
         if algorithm not in KEM_ALG_MAP:
             return {"status": "skipped", "reason": f"unsupported KEM: {algorithm}"}
         oqs_alg = KEM_ALG_MAP[algorithm]
-        enabled = list(getattr(oqs, "get_enabled_kem_mechanisms", lambda: [])())  # type: ignore[attr-defined]
+        enabled = list(getattr(oqs, "get_enabled_kem_mechanisms", lambda: [])())
         if oqs_alg not in enabled:
             return {"status": "skipped", "reason": f"KEM not enabled in liboqs: {oqs_alg}"}
 
@@ -126,58 +126,62 @@ class PQCBenchmark:
         encaps_times: List[float] = []
         decaps_times: List[float] = []
 
-        # Warmup
-        with oqs.KEM(oqs_alg) as kem:  # type: ignore[attr-defined]
-            for _ in range(self.warmup):
-                kem.generate_keypair()
-                pk = kem.generate_keypair()
-                ct, _ = kem.encap_secret(pk)
-                kem.decap_secret(ct)
+        try:
+            # Use KeyEncapsulation instead of KEM (liboqs-python 0.14.0 API)
+            # Warmup
+            with oqs.KeyEncapsulation(oqs_alg) as kem:
+                for _ in range(self.warmup):
+                    kem.generate_keypair()
+                    pk = kem.generate_keypair()
+                    ct, _ = kem.encap_secret(pk)
+                    kem.decap_secret(ct)
 
-        # Timed loops
-        with oqs.KEM(oqs_alg) as kem:  # type: ignore[attr-defined]
-            for _ in range(self.iterations):
-                t0 = time.perf_counter()
-                kem.generate_keypair()
-                t1 = time.perf_counter()
-                keygen_times.append(t1 - t0)
+            # Timed loops  
+            with oqs.KeyEncapsulation(oqs_alg) as kem:
+                for _ in range(self.iterations):
+                    t0 = time.perf_counter()
+                    kem.generate_keypair()
+                    t1 = time.perf_counter()
+                    keygen_times.append(t1 - t0)
 
-            for _ in range(self.iterations):
-                pk = kem.generate_keypair()
-                t0 = time.perf_counter()
-                ct, _ = kem.encap_secret(pk)
-                t1 = time.perf_counter()
-                kem.decap_secret(ct)
-                t2 = time.perf_counter()
-                encaps_times.append(t1 - t0)
-                decaps_times.append(t2 - t1)
+                for _ in range(self.iterations):
+                    pk = kem.generate_keypair()
+                    t0 = time.perf_counter()
+                    ct, _ = kem.encap_secret(pk)
+                    t1 = time.perf_counter()
+                    kem.decap_secret(ct)
+                    t2 = time.perf_counter()
+                    encaps_times.append(t1 - t0)
+                    decaps_times.append(t2 - t1)
 
-            sizes = {
-                "public_key_bytes": kem.length_public_key,
-                "secret_key_bytes": kem.length_secret_key,
-                "ciphertext_bytes": kem.length_ciphertext,
-                "shared_secret_bytes": kem.length_shared_secret,
+                sizes = {
+                    "public_key_bytes": kem.length_public_key,
+                    "secret_key_bytes": kem.length_secret_key,
+                    "ciphertext_bytes": kem.length_ciphertext,
+                    "shared_secret_bytes": kem.length_shared_secret,
+                }
+
+            return {
+                "status": "ok",
+                "algorithm": algorithm,
+                "oqs_algorithm": oqs_alg,
+                "type": "KEM", 
+                "iterations": self.iterations,
+                "sizes": sizes,
+                "operations": {
+                    "keygen": _stats_ms(keygen_times),
+                    "encaps": _stats_ms(encaps_times),
+                    "decaps": _stats_ms(decaps_times),
+                },
             }
-
-        return {
-            "status": "ok",
-            "algorithm": algorithm,
-            "oqs_algorithm": oqs_alg,
-            "type": "KEM",
-            "iterations": self.iterations,
-            "sizes": sizes,
-            "operations": {
-                "keygen": _stats_ms(keygen_times),
-                "encaps": _stats_ms(encaps_times),
-                "decaps": _stats_ms(decaps_times),
-            },
-        }
+        except Exception as e:
+            return {"status": "failed", "error": f"KEM benchmark failed: {str(e)}"}
 
     def benchmark_sig(self, algorithm: str) -> Dict[str, Any]:
         if algorithm not in SIG_ALG_MAP:
             return {"status": "skipped", "reason": f"unsupported SIG: {algorithm}"}
         oqs_alg = SIG_ALG_MAP[algorithm]
-        enabled = list(getattr(oqs, "get_enabled_sig_mechanisms", lambda: [])())  # type: ignore[attr-defined]
+        enabled = list(getattr(oqs, "get_enabled_sig_mechanisms", lambda: [])())
         if oqs_alg not in enabled:
             return {"status": "skipped", "reason": f"SIG not enabled in liboqs: {oqs_alg}"}
 
@@ -186,52 +190,56 @@ class PQCBenchmark:
         verify_times: List[float] = []
         msg = b"\x00" * self.message_size
 
-        # Warmup
-        with oqs.Signature(oqs_alg) as sig:  # type: ignore[attr-defined]
-            for _ in range(self.warmup):
-                pk = sig.generate_keypair()
-                s = sig.sign(msg)
-                sig.verify(msg, s, pk)
+        try:
+            # Use Signature class (this should already be correct)
+            # Warmup
+            with oqs.Signature(oqs_alg) as sig:
+                for _ in range(self.warmup):
+                    pk = sig.generate_keypair()
+                    s = sig.sign(msg)
+                    sig.verify(msg, s, pk)
 
-        # Timed loops
-        with oqs.Signature(oqs_alg) as sig:  # type: ignore[attr-defined]
-            pubkey = None
-            for _ in range(self.iterations):
-                t0 = time.perf_counter()
-                pubkey = sig.generate_keypair()
-                t1 = time.perf_counter()
-                keygen_times.append(t1 - t0)
+            # Timed loops
+            with oqs.Signature(oqs_alg) as sig:
+                pubkey = None
+                for _ in range(self.iterations):
+                    t0 = time.perf_counter()
+                    pubkey = sig.generate_keypair()
+                    t1 = time.perf_counter()
+                    keygen_times.append(t1 - t0)
 
-            for _ in range(self.iterations):
-                t0 = time.perf_counter()
-                s = sig.sign(msg)
-                t1 = time.perf_counter()
-                sign_times.append(t1 - t0)
-                t2 = time.perf_counter()
-                sig.verify(msg, s, pubkey)  # type: ignore[arg-type]
-                t3 = time.perf_counter()
-                verify_times.append(t3 - t2)
+                for _ in range(self.iterations):
+                    t0 = time.perf_counter()
+                    s = sig.sign(msg)
+                    t1 = time.perf_counter()
+                    sign_times.append(t1 - t0)
+                    t2 = time.perf_counter()
+                    sig.verify(msg, s, pubkey)
+                    t3 = time.perf_counter()
+                    verify_times.append(t3 - t2)
 
-            sizes = {
-                "public_key_bytes": sig.length_public_key,
-                "secret_key_bytes": sig.length_secret_key,
-                "signature_bytes": sig.length_signature,
+                sizes = {
+                    "public_key_bytes": sig.length_public_key,
+                    "secret_key_bytes": sig.length_secret_key,
+                    "signature_bytes": sig.length_signature,
+                }
+
+            return {
+                "status": "ok",
+                "algorithm": algorithm,
+                "oqs_algorithm": oqs_alg,
+                "type": "SIG",
+                "iterations": self.iterations,
+                "message_size": self.message_size,
+                "sizes": sizes,
+                "operations": {
+                    "keygen": _stats_ms(keygen_times),
+                    "sign": _stats_ms(sign_times),
+                    "verify": _stats_ms(verify_times),
+                },
             }
-
-        return {
-            "status": "ok",
-            "algorithm": algorithm,
-            "oqs_algorithm": oqs_alg,
-            "type": "SIG",
-            "iterations": self.iterations,
-            "message_size": self.message_size,
-            "sizes": sizes,
-            "operations": {
-                "keygen": _stats_ms(keygen_times),
-                "sign": _stats_ms(sign_times),
-                "verify": _stats_ms(verify_times),
-            },
-        }
+        except Exception as e:
+            return {"status": "failed", "error": f"SIG benchmark failed: {str(e)}"}
 
     def run_comprehensive_pqc_benchmark(
         self,
