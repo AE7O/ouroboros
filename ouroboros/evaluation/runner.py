@@ -22,7 +22,6 @@ from .experiments import (
     run_correctness_experiments,
     run_performance_experiments,
     run_security_experiments,
-    run_pqc_experiments,
     run_comparison_experiments
 )
 
@@ -172,14 +171,10 @@ def main():
             print("🔮 Running post-quantum cryptography comparison...")
             algorithms = [x.strip() for x in args.algorithms.split(',')]
             key_sizes = [int(x.strip()) for x in args.key_sizes.split(',')]
-            results = run_pqc_experiments(
-                output_root=output_root,
-                algorithms=algorithms,
-                key_sizes=key_sizes,
-                operations=args.operations,
-                format=args.format,
-                generate_charts=not args.no_charts
-            )
+            from .pqc_benchmark import PQCBenchmark
+            bench = PQCBenchmark(iterations=args.operations)
+            pqc_results = bench.run_comprehensive_pqc_benchmark(algorithms=algorithms)
+            results = pqc_results
             
         elif args.command == 'all':
             print("🚀 Running complete evaluation suite...")
@@ -282,14 +277,10 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
             algorithms = ['kyber512', 'kyber768', 'dilithium2'] if quick else [
                 'kyber512', 'kyber768', 'kyber1024', 'dilithium2', 'dilithium3'
             ]
-            results['pqc'] = run_pqc_experiments(
-                output_root=output_root / 'pqc',
-                algorithms=algorithms,
-                key_sizes=[2048, 3072],
-                operations=pqc_operations,
-                format=format,
-                generate_charts=generate_charts
-            )
+            from .pqc_benchmark import PQCBenchmark
+            bench = PQCBenchmark(iterations=pqc_operations)
+            pqc_results = bench.run_comprehensive_pqc_benchmark(algorithms=algorithms)
+            results['pqc'] = pqc_results
         except Exception as e:
             print(f"⚠️  PQC evaluation failed: {e}")
             results['pqc'] = {'status': 'failed', 'error': str(e)}

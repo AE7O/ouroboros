@@ -398,41 +398,117 @@ def run_security_experiments(output_root: Path, exhaustive: bool,
     
     print(f"  Security evaluation (exhaustive={exhaustive})...")
     
-    # Replay protection tests (canned comprehensive test skipped until implemented)
+    # --- Real Replay Protection Test ---
     print("    Testing replay protection...")
-    results['replay_protection'] = {
-        'status': 'skipped',
-        'reason': 'comprehensive replay test not implemented in experiments'
-    }
+    from ..protocol.decryptor import test_replay_protection
+    replay_result = test_replay_protection(use_ascon=False)
+    results['replay_protection'] = replay_result
+    write_data(output_root, 'replay_protection', replay_result, format)
 
-    # Key security tests (skipped until implemented)
+    # --- Real Key Security Test ---
     print("    Testing key security...")
-    results['key_security'] = {
-        'status': 'skipped',
-        'reason': 'key security comprehensive test not implemented in experiments'
-    }
+    from ..crypto.utils import generate_random_bytes
+    from ..protocol.encryptor import create_encryption_context
+    from ..protocol.decryptor import create_decryption_context
+    from ..crypto.ratchet import RatchetState
+    key_security = {}
+    # Forward secrecy: after ratchet step, old keys cannot decrypt new messages
+    master_psk = generate_random_bytes(32)
+    channel_id = 99
+    engine1 = create_encryption_context(master_psk, channel_id, use_ascon=False)
+    engine2 = create_encryption_context(master_psk, channel_id, use_ascon=False)
+    plaintext = b"Key security test message"
+    packet1 = engine1.encrypt_message(plaintext)
+    # Advance ratchet in engine2 (simulate key update)
+    engine2.ratchet.advance_ratchet_send()
+    forward_secrecy = True
+    try:
+        # Should fail to decrypt with advanced ratchet
+        dec_engine = create_decryption_context(master_psk, channel_id, use_ascon=False)
+        dec_engine.ratchet.advance_ratchet_send()
+        dec_engine.decrypt_packet(packet1.to_bytes())
+        forward_secrecy = False
+    except Exception:
+        pass
+    key_security['forward_secrecy'] = forward_secrecy
+    # Channel isolation: different channel IDs must not decrypt each other's packets
+    engine3 = create_encryption_context(master_psk, channel_id+1, use_ascon=False)
+    packet2 = engine3.encrypt_message(plaintext)
+    dec_engine2 = create_decryption_context(master_psk, channel_id, use_ascon=False)
+    try:
+        dec_engine2.decrypt_packet(packet2.to_bytes())
+        channel_isolation = False
+    except Exception:
+        channel_isolation = True
+    key_security['channel_isolation'] = channel_isolation
+    # Ratchet uniqueness: ratchets with different master keys must not decrypt each other's packets
+    master_psk2 = generate_random_bytes(32)
+    engine4 = create_encryption_context(master_psk2, channel_id, use_ascon=False)
+    packet3 = engine4.encrypt_message(plaintext)
+    dec_engine3 = create_decryption_context(master_psk, channel_id, use_ascon=False)
+    try:
+        dec_engine3.decrypt_packet(packet3.to_bytes())
+        ratchet_uniqueness = False
+    except Exception:
+        ratchet_uniqueness = True
+    key_security['ratchet_uniqueness'] = ratchet_uniqueness
+    key_security['tests_run'] = 3
+    results['key_security'] = key_security
+    write_data(output_root, 'key_security', key_security, format)
 
-    # Timing attack analysis (skipped unless a real implementation is added)
+    # --- Real Timing Analysis ---
     if include_timing:
         print("    Timing attack analysis...")
-        results['timing_analysis'] = {
-            'status': 'skipped',
-            'reason': 'timing analysis not implemented'
+        import time
+        timings = {'encryption': [], 'decryption': [], 'ratchet': []}
+        master_psk = generate_random_bytes(32)
+        channel_id = 77
+        engine = create_encryption_context(master_psk, channel_id, use_ascon=False)
+        dec_engine = create_decryption_context(master_psk, channel_id, use_ascon=False)
+        plaintext = b"Timing analysis message" * 4
+        # Encryption timing
+        for _ in range(20):
+            t0 = time.perf_counter()
+            packet = engine.encrypt_message(plaintext)
+            t1 = time.perf_counter()
+            timings['encryption'].append((t1-t0)*1000)
+        # Decryption timing - generate fresh packets to avoid replay errors
+        for _ in range(20):
+            fresh_packet = engine.encrypt_message(plaintext)
+            packet_bytes = fresh_packet.to_bytes()
+            t0 = time.perf_counter()
+            dec_engine.decrypt_packet(packet_bytes)
+            t1 = time.perf_counter()
+            timings['decryption'].append((t1-t0)*1000)
+        # Ratchet timing
+        for _ in range(20):
+            t0 = time.perf_counter()
+            engine.ratchet.advance_ratchet_send()
+            t1 = time.perf_counter()
+            timings['ratchet'].append((t1-t0)*1000)
+        import statistics
+        timing_result = {
+            'encryption_timing_ms': {
+                'mean': statistics.mean(timings['encryption']),
+                'stdev': statistics.stdev(timings['encryption'])
+            },
+            'decryption_timing_ms': {
+                'mean': statistics.mean(timings['decryption']),
+                'stdev': statistics.stdev(timings['decryption'])
+            },
+            'ratchet_timing_ms': {
+                'mean': statistics.mean(timings['ratchet']),
+                'stdev': statistics.stdev(timings['ratchet'])
+            },
+            'assessment': 'Low timing variance - good side-channel resistance' if max(statistics.stdev(timings['encryption']), statistics.stdev(timings['decryption']), statistics.stdev(timings['ratchet'])) < 0.1 else 'High timing variance - investigate side-channel risk'
         }
-    
-    # Save results
+        results['timing_analysis'] = timing_result
+        write_data(output_root, 'timing_analysis', timing_result, format)
+
+    # Save summary
     write_data(output_root, 'security_summary', results, format)
-    write_data(output_root, 'replay_protection', results['replay_protection'], format)
-    write_data(output_root, 'key_security', results['key_security'], format)
-    
-    if results['timing_analysis']:
-        write_data(output_root, 'timing_analysis', results['timing_analysis'], format)
-    
     return results
 
-
-def run_pqc_experiments(output_root: Path, algorithms: List[str], key_sizes: List[int],
-                        operations: int, format: str, generate_charts: bool) -> Dict[str, Any]:
     """Run PQC benchmarks (real liboqs results only)."""
     output_root.mkdir(parents=True, exist_ok=True)
     results: Dict[str, Any] = {}

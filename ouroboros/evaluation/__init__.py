@@ -9,6 +9,5 @@ from .sysinfo import capture_system_info
 from .experiments import (
     run_correctness_experiments,
     run_performance_experiments,
-    run_security_experiments,
-    run_pqc_experiments
+    run_security_experiments
 )
