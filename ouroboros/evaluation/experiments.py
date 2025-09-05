@@ -5,12 +5,13 @@ Experiment orchestration for comprehensive Ouroboros evaluation.
 import time
 import gc
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 from collections import defaultdict
 import statistics
 
 from .results import write_data
 from .sysinfo import capture_system_info
+from .pqc_benchmark import PQCBenchmark, get_pqc_system_info
 
 
 def run_correctness_experiments(output_root: Path, trials: int, verbose: bool,
@@ -299,22 +300,23 @@ def run_performance_experiments(output_root: Path, duration: int, warmup: int,
     
     for op_name, op_func in operations:
         print(f"      {op_name}...")
-        latencies = []
-        
-        for _ in range(100):  # Reduced from 1000 to 100 samples for faster execution
+        latencies_ms = []
+
+        for _ in range(100):  # 100 samples for faster execution
             start_time = time.perf_counter()
             op_func()
             end_time = time.perf_counter()
-            latencies.append((end_time - start_time) * 1000000)  # microseconds
-        
+            latencies_ms.append((end_time - start_time) * 1000.0)  # milliseconds
+
+        sorted_lat = sorted(latencies_ms)
         latency_results[op_name] = {
-            'mean_us': statistics.mean(latencies),
-            'median_us': statistics.median(latencies),
-            'p95_us': sorted(latencies)[int(0.95 * len(latencies))],
-            'p99_us': sorted(latencies)[int(0.99 * len(latencies))],
-            'min_us': min(latencies),
-            'max_us': max(latencies),
-            'std_us': statistics.stdev(latencies)
+            'mean_ms': statistics.mean(latencies_ms),
+            'median_ms': statistics.median(latencies_ms),
+            'p95_ms': sorted_lat[int(0.95 * len(sorted_lat))],
+            'p99_ms': sorted_lat[int(0.99 * len(sorted_lat))],
+            'min_ms': min(latencies_ms),
+            'max_ms': max(latencies_ms),
+            'std_ms': (statistics.stdev(latencies_ms) if len(latencies_ms) > 1 else 0.0)
         }
     
     results['latency'] = latency_results
@@ -396,21 +398,27 @@ def run_security_experiments(output_root: Path, exhaustive: bool,
     
     print(f"  Security evaluation (exhaustive={exhaustive})...")
     
-    # Replay protection tests
+    # Replay protection tests (canned comprehensive test skipped until implemented)
     print("    Testing replay protection...")
-    replay_results = test_replay_protection_comprehensive(replay_window_size)
-    results['replay_protection'] = replay_results
-    
-    # Key security tests
+    results['replay_protection'] = {
+        'status': 'skipped',
+        'reason': 'comprehensive replay test not implemented in experiments'
+    }
+
+    # Key security tests (skipped until implemented)
     print("    Testing key security...")
-    key_results = test_key_security_comprehensive(exhaustive)
-    results['key_security'] = key_results
-    
-    # Timing attack analysis
+    results['key_security'] = {
+        'status': 'skipped',
+        'reason': 'key security comprehensive test not implemented in experiments'
+    }
+
+    # Timing attack analysis (skipped unless a real implementation is added)
     if include_timing:
         print("    Timing attack analysis...")
-        timing_results = analyze_timing_patterns()
-        results['timing_analysis'] = timing_results
+        results['timing_analysis'] = {
+            'status': 'skipped',
+            'reason': 'timing analysis not implemented'
+        }
     
     # Save results
     write_data(output_root, 'security_summary', results, format)
@@ -423,71 +431,39 @@ def run_security_experiments(output_root: Path, exhaustive: bool,
     return results
 
 
-def run_pqc_experiments(output_root: Path, algorithms: List[str],
-                       key_sizes: List[int], operations: int,
-                       format: str, generate_charts: bool) -> Dict[str, Any]:
-    """Run post-quantum cryptography baseline comparison."""
+def run_pqc_experiments(output_root: Path, algorithms: List[str], key_sizes: List[int],
+                        operations: int, format: str, generate_charts: bool) -> Dict[str, Any]:
+    """Run PQC benchmarks (real liboqs results only)."""
     output_root.mkdir(parents=True, exist_ok=True)
-    
-    results = {
-        'configuration': {
-            'algorithms': algorithms,
-            'key_sizes': key_sizes,
-            'operations': operations
-        },
-        'pqc_results': {},
-        'classical_results': {},
-        'comparison': {}
-    }
-    
-    print(f"  PQC baseline comparison ({operations} operations per algorithm)...")
-    
-    try:
-        # Use new PQC benchmark module
-        from .pqc_benchmark import PQCBenchmark, get_pqc_system_info
-        
-        pqc_bench = PQCBenchmark()
-        pqc_results = pqc_bench.run_comprehensive_pqc_benchmark(
-            iterations=operations,
-            message_sizes=[256, 1024]
-        )
-        
-        results['pqc_results'] = pqc_results
-        results['system_info'] = get_pqc_system_info()
-        
-        # Classical comparison (RSA) - keep simulated for now
-        print("    Classical cryptography baseline...")
-        for key_size in key_sizes:
-            results['classical_results'][f'rsa_{key_size}'] = benchmark_rsa_operations(
-                key_size, operations
-            )
-        
-        # Generate comparison
-        results['comparison'] = generate_pqc_comparison(
-            results['pqc_results'],
-            results['classical_results']
-        )
-        
-    except ImportError as e:
-        print(f"    liboqs not available - {e}")
-        results = generate_simulated_pqc_results(algorithms, key_sizes, operations)
-        results['system_info'] = {'oqs_available': False, 'error': str(e)}
-    
-    # Save results
-    write_data(output_root, 'pqc_summary', results, format)
-    write_data(output_root, 'pqc_algorithms', results['pqc_results'], format)
-    write_data(output_root, 'classical_algorithms', results['classical_results'], format)
-    write_data(output_root, 'pqc_comparison', results['comparison'], format)
-    
-    # Generate charts if requested
+    results: Dict[str, Any] = {}
+
+    # System info
+    results['system_info'] = capture_system_info()
+    results['pqc_lib_info'] = get_pqc_system_info()
+
+    # Real PQC benchmarks
+    bench = PQCBenchmark(iterations=operations, warmup=5)
+    pqc_results = bench.run_comprehensive_pqc_benchmark(
+        algorithms=algorithms,
+        iterations=operations,
+        warmup=5,
+        message_size=1024,
+    )
+
+    results['pqc_results'] = pqc_results
+    results['classical_results'] = {}  # no simulated classical baseline
+
+    # Persist
+    write_data(output_root, 'pqc_results', results, format=format)
+
+    # Charts (robust to empty classical)
     if generate_charts:
         try:
             from .charts import generate_pqc_charts
-            print("    Generating PQC comparison charts...")
             generate_pqc_charts(output_root, results)
-        except ImportError:
-            print("      matplotlib not available - skipping charts")
-    
+        except Exception as e:
+            print(f"      Chart generation failed: {e}")
+
     return results
 
 
@@ -700,12 +676,31 @@ def benchmark_rsa_operations(key_size: int, operations: int) -> Dict[str, Any]:
 
 def generate_pqc_comparison(pqc_results: Dict, classical_results: Dict) -> Dict[str, Any]:
     """Generate PQC vs classical comparison."""
+    # Handle both simulated flat shape and real nested shape
+    def pqc_keygen_ms_map() -> Dict[str, float]:
+        # Simulated shape: {alg: {'keygen_ms': ...}}
+        if 'algorithms' not in pqc_results:
+            return {
+                alg: data.get('keygen_ms', float('inf'))
+                for alg, data in pqc_results.items()
+                if isinstance(data, dict)
+            }
+        # Real shape: {'algorithms': {alg: {'operations': {'keygen': {'mean_ms': ...}}}}}
+        flat: Dict[str, float] = {}
+        for alg, data in pqc_results.get('algorithms', {}).items():
+            try:
+                flat[alg] = float(data['operations']['keygen']['mean_ms'])
+            except Exception:
+                flat[alg] = float('inf')
+        return flat
+
+    pqc_map = pqc_keygen_ms_map()
+    fastest_pqc = min(pqc_map, key=lambda k: pqc_map[k]) if pqc_map else None
+    fastest_rsa = min(classical_results, key=lambda k: classical_results[k].get('keygen_ms', float('inf'))) if classical_results else None
     return {
         'summary': 'PQC algorithms show competitive performance with quantum resistance',
-        'fastest_pqc_keygen': min(pqc_results.keys(), 
-                                 key=lambda k: pqc_results[k]['keygen_ms']),
-        'fastest_classical_keygen': min(classical_results.keys(),
-                                       key=lambda k: classical_results[k]['keygen_ms']),
+        'fastest_pqc_keygen': fastest_pqc,
+        'fastest_classical_keygen': fastest_rsa,
         'size_comparison': 'PQC keys are generally larger than classical keys'
     }
 

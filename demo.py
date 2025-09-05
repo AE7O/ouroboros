@@ -15,8 +15,9 @@ from ouroboros import (
     create_peer_context, 
     generate_random_bytes,
     quick_benchmark,
-    run_comprehensive_benchmark
 )
+from ouroboros.evaluation.runner import run_complete_suite
+from ouroboros.evaluation.results import new_run_root
 
 
 def demo_basic_communication():
@@ -150,28 +151,33 @@ def demo_traffic_obfuscation():
 def run_performance_suite():
     """Run comprehensive performance evaluation."""
     print("\n=== Comprehensive Performance Suite ===\n")
-    print("Running comprehensive benchmark (this may take a while)...")
-    
-    # Run quick benchmark
-    results = run_comprehensive_benchmark(quick=True)
-    
+    print("Running evaluation runner (quick mode)...")
+    output_root = new_run_root('evaluation_results')
+    results = run_complete_suite(
+        output_root=output_root,
+        quick=True,
+        skip_pqc=False,
+        format='both',
+        generate_charts=True
+    )
+
     print("\nSummary Results:")
-    summary = results['summary']
-    
-    for algorithm in summary['algorithms_tested']:
-        alg_stats = summary['by_algorithm'][algorithm]
-        print(f"\n{algorithm}:")
-        print(f"  Average throughput: {alg_stats['avg_throughput_mbps']:.2f} MB/s")
-        print(f"  Peak throughput: {alg_stats['max_throughput_mbps']:.2f} MB/s")
-        print(f"  Average latency: {alg_stats['avg_latency_ms']:.2f} ms")
-        print(f"  Minimum latency: {alg_stats['min_latency_ms']:.2f} ms")
-    
-    # Show scrambling overhead
-    if results['scrambling_overhead']:
-        print(f"\nScrambling Overhead:")
-        for result in results['scrambling_overhead'][:3]:  # Show first 3
-            print(f"  {result['message_size']}B: "
-                  f"{result['overhead_percent']:.1f}% overhead")
+    perf = results.get('performance', {})
+    thr = perf.get('throughput', {})
+    lat = perf.get('latency', {})
+    if thr:
+        print("\nThroughput (packets/sec):")
+        for size, data in thr.items():
+            enc = data.get('encryption', {}).get('packets_per_second')
+            dec = data.get('decryption', {}).get('packets_per_second')
+            if enc is not None and dec is not None:
+                print(f"  {size}B: enc={enc:.0f}, dec={dec:.0f}")
+    if lat:
+        print("\nLatency (ms):")
+        for op, stats in lat.items():
+            mean = stats.get('mean_ms')
+            if mean is not None:
+                print(f"  {op}: {mean:.3f} ms")
 
 
 def main():

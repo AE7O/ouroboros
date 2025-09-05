@@ -1,477 +1,284 @@
 """
 PQC Benchmark Module
 
-Comprehensive benchmarking for Post-Quantum Cryptography algorithms:
-- Kyber768 (Key Encapsulation Mechanism)
-- Dilithium2 (Digital Signatures)
-- Full PQC Protocol Flow
+Benchmarks Post-Quantum Cryptography algorithms via liboqs (liboqs-python):
+- KEMs: ML-KEM (Kyber family)
+- Signatures: ML-DSA (Dilithium family)
 
-All benchmarks use consistent timing methodology for fair comparison with Ouroboros.
+All timings are reported in milliseconds (ms).
 """
+from __future__ import annotations
 
-import gc
-import statistics
 import time
-from typing import Any, Dict, List
+import statistics
+from typing import Any, Dict, List, Optional
 
+# Import liboqs-python runtime as "oqs"
+OQS_AVAILABLE = False
 try:
-    import oqs
+    import oqs  # liboqs-python installs the module name "oqs"
     OQS_AVAILABLE = True
-except ImportError:
+except Exception:
+    oqs = None  # type: ignore
     OQS_AVAILABLE = False
-    print("Warning: liboqs-python not available, PQC benchmarks will be skipped")
+
+# Friendly name -> liboqs mechanism
+KEM_ALG_MAP: Dict[str, str] = {
+    "kyber512": "ML-KEM-512",
+    "kyber768": "ML-KEM-768",
+    "kyber1024": "ML-KEM-1024",
+}
+SIG_ALG_MAP: Dict[str, str] = {
+    "dilithium2": "ML-DSA-44",
+    "dilithium3": "ML-DSA-65",
+    "dilithium5": "ML-DSA-87",
+}
+
+
+def _stats_ms(samples_s: List[float]) -> Dict[str, Any]:
+    """Convert second-based samples to ms stats with robust percentiles."""
+    if not samples_s:
+        return {
+            "mean_ms": None,
+            "median_ms": None,
+            "std_ms": None,
+            "min_ms": None,
+            "max_ms": None,
+            "p95_ms": None,
+            "p99_ms": None,
+            "samples": 0,
+        }
+    samples_ms = [s * 1000.0 for s in samples_s]
+    samples_ms_sorted = sorted(samples_ms)
+    n = len(samples_ms_sorted)
+
+    def pct(p: float) -> float:
+        if n == 1:
+            return samples_ms_sorted[0]
+        idx = min(max(int(p * n), 0), n - 1)
+        return samples_ms_sorted[idx]
+
+    return {
+        "mean_ms": statistics.mean(samples_ms),
+        "median_ms": statistics.median(samples_ms),
+        "std_ms": statistics.pstdev(samples_ms) if n > 1 else 0.0,
+        "min_ms": samples_ms_sorted[0],
+        "max_ms": samples_ms_sorted[-1],
+        "p95_ms": pct(0.95),
+        "p99_ms": pct(0.99),
+        "samples": n,
+    }
 
 
 def get_pqc_system_info() -> Dict[str, Any]:
     """Get PQC library system information."""
     if not OQS_AVAILABLE:
-        return {
-            'liboqs_available': False,
-            'error': 'liboqs-python not installed'
-        }
-    
+        return {"liboqs_available": False, "error": "liboqs-python (oqs) not installed"}
+    get_kems = getattr(oqs, "get_enabled_kem_mechanisms", None)  # type: ignore[attr-defined]
+    get_sigs = getattr(oqs, "get_enabled_sig_mechanisms", None)  # type: ignore[attr-defined]
+    kems = list(get_kems()) if callable(get_kems) else []
+    sigs = list(get_sigs()) if callable(get_sigs) else []
+    oqs_version = getattr(oqs, "oqs_version", lambda: getattr(oqs, "__version__", "unknown"))()  # type: ignore[attr-defined]
+    oqs_py_version = getattr(oqs, "oqs_python_version", lambda: getattr(oqs, "__version__", "unknown"))()  # type: ignore[attr-defined]
     return {
-        'liboqs_available': True,
-        'liboqs_version': oqs.oqs_version(),
-        'liboqs_python_version': oqs.oqs_python_version(),
-        'enabled_kems': oqs.get_enabled_kem_mechanisms(),
-        'enabled_sigs': oqs.get_enabled_sig_mechanisms(),
-        'kyber768_available': 'ML-KEM-768' in oqs.get_enabled_kem_mechanisms(),
-        'dilithium2_available': 'ML-DSA-44' in oqs.get_enabled_sig_mechanisms()
+        "liboqs_available": True,
+        "liboqs_version": oqs_version,
+        "liboqs_python_version": oqs_py_version,
+        "enabled_kems": kems,
+        "enabled_sigs": sigs,
+        "kyber512_available": "ML-KEM-512" in kems,
+        "kyber768_available": "ML-KEM-768" in kems,
+        "kyber1024_available": "ML-KEM-1024" in kems,
+        "dilithium2_available": "ML-DSA-44" in sigs,
+        "dilithium3_available": "ML-DSA-65" in sigs,
+        "dilithium5_available": "ML-DSA-87" in sigs,
     }
 
 
 class PQCBenchmark:
-    """Comprehensive PQC benchmarking class."""
-    
-    def __init__(self):
-        """Initialize PQC benchmark."""
+    """PQC benchmarking helper with consistent timing and warmup."""
+    def __init__(self, iterations: int = 30, warmup: int = 5, message_size: int = 1024):
         if not OQS_AVAILABLE:
-            raise ImportError("liboqs-python is required for PQC benchmarks")
-    
-    def benchmark_kyber768(self, iterations: int = 100, warmup: int = 10) -> Dict[str, Any]:
-        """
-        Benchmark Kyber768 KEM operations.
-        
-        Args:
-            iterations: Number of benchmark iterations
-            warmup: Number of warmup iterations
-            
-        Returns:
-            Comprehensive Kyber768 benchmark results
-        """
-        print(f"    Benchmarking Kyber768 KEM ({iterations} iterations)...")
-        
-        # Initialize KEM
-        kem = oqs.KeyEncapsulation('ML-KEM-768')
-        
-        # Get algorithm info
-        details = kem.details
-        pk_size = details['length_public_key']
-        sk_size = details['length_secret_key']
-        ct_size = details['length_ciphertext']
-        
-        results = {
-            'algorithm': 'Kyber768',
-            'type': 'KEM',
-            'iterations': iterations,
-            'pk_size_bytes': pk_size,
-            'sk_size_bytes': sk_size,
-            'ciphertext_size_bytes': ct_size,
-            'operations': {}
-        }
-        
-        # Benchmark key generation
-        print(f"      Key generation...")
-        keygen_times = []
-        
+            raise ImportError("liboqs-python (oqs) not installed")
+        self.iterations = max(int(iterations), 1)
+        self.warmup = max(int(warmup), 0)
+        self.message_size = max(int(message_size), 1)
+
+    def _override_once(self, iterations: Optional[int], warmup: Optional[int], message_size: Optional[int]):
+        prev = (self.iterations, self.warmup, self.message_size)
+        if iterations is not None:
+            self.iterations = max(int(iterations), 1)
+        if warmup is not None:
+            self.warmup = max(int(warmup), 0)
+        if message_size is not None:
+            self.message_size = max(int(message_size), 1)
+        return prev
+
+    def benchmark_kem(self, algorithm: str) -> Dict[str, Any]:
+        if algorithm not in KEM_ALG_MAP:
+            return {"status": "skipped", "reason": f"unsupported KEM: {algorithm}"}
+        oqs_alg = KEM_ALG_MAP[algorithm]
+        enabled = list(getattr(oqs, "get_enabled_kem_mechanisms", lambda: [])())  # type: ignore[attr-defined]
+        if oqs_alg not in enabled:
+            return {"status": "skipped", "reason": f"KEM not enabled in liboqs: {oqs_alg}"}
+
+        keygen_times: List[float] = []
+        encaps_times: List[float] = []
+        decaps_times: List[float] = []
+
         # Warmup
-        for _ in range(warmup):
-            with oqs.KeyEncapsulation('ML-KEM-768') as temp_kem:
-                temp_kem.generate_keypair()
+        with oqs.KEM(oqs_alg) as kem:  # type: ignore[attr-defined]
+            for _ in range(self.warmup):
+                kem.generate_keypair()
+                pk = kem.generate_keypair()
+                ct, _ = kem.encap_secret(pk)
+                kem.decap_secret(ct)
 
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            with oqs.KeyEncapsulation('ML-KEM-768') as temp_kem:
-                public_key = temp_kem.generate_keypair()
-            end = time.perf_counter()
-            keygen_times.append((end - start) * 1000)  # milliseconds
+        # Timed loops
+        with oqs.KEM(oqs_alg) as kem:  # type: ignore[attr-defined]
+            for _ in range(self.iterations):
+                t0 = time.perf_counter()
+                kem.generate_keypair()
+                t1 = time.perf_counter()
+                keygen_times.append(t1 - t0)
 
-        results['operations']['keygen'] = self._analyze_timing(keygen_times)
-        
-        # Generate a keypair for encaps/decaps benchmarks
-        public_key = kem.generate_keypair()
-        
-        # Benchmark encapsulation
-        print(f"      Encapsulation...")
-        encaps_times = []
-        
-        # Warmup
-        for _ in range(warmup):
-            try:
-                kem.encap_secret(public_key)
-            except Exception:
-                pass
+            for _ in range(self.iterations):
+                pk = kem.generate_keypair()
+                t0 = time.perf_counter()
+                ct, _ = kem.encap_secret(pk)
+                t1 = time.perf_counter()
+                kem.decap_secret(ct)
+                t2 = time.perf_counter()
+                encaps_times.append(t1 - t0)
+                decaps_times.append(t2 - t1)
 
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            try:
-                ciphertext, shared_secret = kem.encap_secret(public_key)
-            except ValueError:
-                # Handle case where encap_secret returns more values
-                encap_result = kem.encap_secret(public_key)
-                ciphertext = encap_result[0]
-                shared_secret = encap_result[1]
-            end = time.perf_counter()
-            encaps_times.append((end - start) * 1000)  # milliseconds
+            sizes = {
+                "public_key_bytes": kem.length_public_key,
+                "secret_key_bytes": kem.length_secret_key,
+                "ciphertext_bytes": kem.length_ciphertext,
+                "shared_secret_bytes": kem.length_shared_secret,
+            }
 
-        results['operations']['encaps'] = self._analyze_timing(encaps_times)
-        
-        # Benchmark decapsulation
-        print(f"      Decapsulation...")
-        decaps_times = []
-        try:
-            ciphertext, expected_shared_secret = kem.encap_secret(public_key)
-        except ValueError:
-            # Handle case where encap_secret returns more than 2 values
-            encap_result = kem.encap_secret(public_key)
-            ciphertext = encap_result[0]
-            expected_shared_secret = encap_result[1]
-        
-        # Warmup
-        for _ in range(warmup):
-            try:
-                kem.decap_secret(ciphertext)
-            except Exception:
-                pass
-
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            shared_secret = kem.decap_secret(ciphertext)
-            end = time.perf_counter()
-            decaps_times.append((end - start) * 1000)  # milliseconds
-
-        results['operations']['decaps'] = self._analyze_timing(decaps_times)
-        
-        return results
-    
-    def benchmark_dilithium2(self, iterations: int = 100, warmup: int = 10, 
-                           message_size: int = 1024) -> Dict[str, Any]:
-        """
-        Benchmark Dilithium2 signature operations.
-        
-        Args:
-            iterations: Number of benchmark iterations
-            warmup: Number of warmup iterations
-            message_size: Size of test message in bytes
-            
-        Returns:
-            Comprehensive Dilithium2 benchmark results
-        """
-        print(f"    Benchmarking Dilithium2 Signatures ({iterations} iterations, {message_size}B messages)...")
-        
-        # Initialize Signature
-        sig = oqs.Signature('ML-DSA-44')
-        
-        # Get algorithm info
-        details = sig.details
-        pk_size = details['length_public_key']
-        sk_size = details['length_secret_key']
-        sig_size = details['length_signature']
-        
-        # Test message
-        message = b'A' * message_size
-        
-        results = {
-            'algorithm': 'Dilithium2',
-            'type': 'Signature',
-            'iterations': iterations,
-            'message_size_bytes': message_size,
-            'pk_size_bytes': pk_size,
-            'sk_size_bytes': sk_size,
-            'signature_size_bytes': sig_size,
-            'operations': {}
-        }
-        
-        # Benchmark key generation
-        print(f"      Key generation...")
-        keygen_times = []
-        
-        # Warmup
-        for _ in range(warmup):
-            with oqs.Signature('ML-DSA-44') as temp_sig:
-                temp_sig.generate_keypair()
-
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            with oqs.Signature('ML-DSA-44') as temp_sig:
-                public_key = temp_sig.generate_keypair()
-            end = time.perf_counter()
-            keygen_times.append((end - start) * 1000)  # milliseconds
-
-        results['operations']['keygen'] = self._analyze_timing(keygen_times)
-        
-        # Generate a keypair for signing/verification benchmarks  
-        public_key = sig.generate_keypair()
-        
-        # Benchmark signing
-        print(f"      Signing...")
-        sign_times = []
-        
-        # Warmup
-        for _ in range(warmup):
-            try:
-                sig.sign(message)
-            except Exception:
-                pass
-
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            signature = sig.sign(message)
-            end = time.perf_counter()
-            sign_times.append((end - start) * 1000)  # milliseconds
-
-        results['operations']['sign'] = self._analyze_timing(sign_times)
-        
-        # Benchmark verification
-        print(f"      Verification...")
-        verify_times = []
-        signature = sig.sign(message)
-        
-        # Use same sig instance for verification (which has the correct key state)
-        # Warmup
-        for _ in range(warmup):
-            try:
-                sig.verify(message, signature, public_key)
-            except Exception:
-                pass
-        
-        gc.collect()
-        for i in range(iterations):
-            # Use pre-generated signature for consistent verification
-            start = time.perf_counter()
-            try:
-                is_valid = sig.verify(message, signature, public_key)
-                if not is_valid:
-                    if i < 5:  # Only show first 5 warnings
-                        print(f"        Warning: Signature verification returned False at iteration {i}")
-                    elif i == 5:
-                        print(f"        ... (suppressing further verification warnings)")
-                    # Continue benchmark despite verification failure
-            except Exception as e:
-                if i < 5:
-                    print(f"        Warning: Signature verification error at iteration {i}: {e}")
-                continue  # Skip this iteration but don't fail
-            end = time.perf_counter()
-            verify_times.append((end - start) * 1000)  # milliseconds
-        
-        results['operations']['verify'] = self._analyze_timing(verify_times)
-        
-        return results
-    
-    def benchmark_full_pqc_protocol(self, iterations: int = 100, warmup: int = 50,
-                                   message_size: int = 1024) -> Dict[str, Any]:
-        """
-        Benchmark complete PQC protocol flow: KEM + Signature.
-        
-        Simulates:
-        1. Generate Dilithium2 keypair (long-term identity)
-        2. Generate Kyber768 keypair (ephemeral)
-        3. Encapsulate shared secret
-        4. Sign the ciphertext + message with Dilithium2
-        5. Verify signature
-        6. Decapsulate shared secret
-        
-        Args:
-            iterations: Number of full protocol runs
-            warmup: Number of warmup iterations
-            message_size: Size of test message
-            
-        Returns:
-            Complete protocol benchmark results
-        """
-        print(f"    Benchmarking full PQC protocol ({iterations} iterations, {message_size}B messages)...")
-        
-        # Initialize algorithms
-        kem = oqs.KeyEncapsulation('ML-KEM-768')
-        sig = oqs.Signature('ML-DSA-44')
-        
-        message = b'A' * message_size
-        
-        # Generate long-term Dilithium keypair
-        sig_public_key = sig.generate_keypair()
-        
-        results = {
-            'protocol': 'Full PQC (Kyber768 + Dilithium2)',
-            'iterations': iterations,
-            'message_size_bytes': message_size,
-            'total_overhead_bytes': (
-                sig.details['length_public_key'] + 
-                sig.details['length_signature'] +
-                kem.details['length_public_key'] +
-                kem.details['length_ciphertext']
-            ),
-            'operations': {}
-        }
-        
-        # Warmup
-        print(f"      Warming up...")
-        for _ in range(warmup):
-            # Full protocol run
-            kem_public = kem.generate_keypair()
-            ciphertext, shared_secret = kem.encap_secret(kem_public)
-            signature = sig.sign(message + ciphertext)
-            recovered_secret = kem.decap_secret(ciphertext)
-        
-        # Benchmark complete protocol
-        print(f"      Full protocol execution...")
-        protocol_times = []
-        
-        gc.collect()
-        for _ in range(iterations):
-            start = time.perf_counter()
-            
-            # 1. Generate ephemeral Kyber keypair  
-            kem_public = kem.generate_keypair()
-            
-            # 2. Encapsulate shared secret
-            ciphertext, shared_secret = kem.encap_secret(kem_public)
-            
-            # 3. Sign message + ciphertext
-            signature = sig.sign(message + ciphertext)
-            
-            # 4. Verify signature (using same instance)
-            try:
-                is_valid = sig.verify(message + ciphertext, signature, sig_public_key)
-                if not is_valid:
-                    if _ < 5:
-                        print(f"      Warning: Signature verification failed at iteration {_}")
-                    # Continue benchmark despite verification failure
-            except Exception as e:
-                if _ < 5:
-                    print(f"      Warning: Verification error at iteration {_}: {e}")
-            
-            # 5. Decapsulate shared secret
-            recovered_secret = kem.decap_secret(ciphertext)
-            if recovered_secret != shared_secret:
-                if _ < 5:
-                    print(f"      Warning: Secret recovery mismatch at iteration {_}")
-                # Continue benchmark despite mismatch
-            
-            end = time.perf_counter()
-            protocol_times.append((end - start) * 1000)  # milliseconds
-        
-        results['operations']['full_protocol'] = self._analyze_timing(protocol_times)
-        
-        return results
-    
-    def _analyze_timing(self, times: List[float]) -> Dict[str, Any]:
-        """Analyze timing measurements and compute statistics."""
-        if not times:
-            return {'operation': 'unknown'}
-        
-        times_sorted = sorted(times)
-        mean_time = statistics.mean(times)
-        
         return {
-            'mean_ms': mean_time,
-            'median_ms': statistics.median(times),
-            'std_ms': statistics.stdev(times) if len(times) > 1 else 0.0,
-            'min_ms': min(times),
-            'max_ms': max(times),
-            'p95_ms': times_sorted[int(0.95 * len(times_sorted))],
-            'p99_ms': times_sorted[int(0.99 * len(times_sorted))],
-            'ops_per_sec': 1000.0 / mean_time if mean_time > 0 else 0.0,
-            'samples': len(times)
+            "status": "ok",
+            "algorithm": algorithm,
+            "oqs_algorithm": oqs_alg,
+            "type": "KEM",
+            "iterations": self.iterations,
+            "sizes": sizes,
+            "operations": {
+                "keygen": _stats_ms(keygen_times),
+                "encaps": _stats_ms(encaps_times),
+                "decaps": _stats_ms(decaps_times),
+            },
         }
-    
-    def run_comprehensive_pqc_benchmark(self, iterations: int = 100,
-                                       message_sizes: List[int] = [256, 1024]) -> Dict[str, Any]:
-        """
-        Run complete PQC benchmark suite for comparison with Ouroboros.
-        
-        Benchmarks:
-        - Kyber768 KEM (keygen, encaps, decaps)
-        - Dilithium2 Signatures (keygen, sign, verify) for each message size
-        - Full PQC protocol for each message size
-        
-        Args:
-            iterations: Number of iterations for each benchmark
-            message_sizes: List of message sizes to benchmark
-            
-        Returns:
-            Complete PQC benchmark results
-        """
-        print(f"  Running comprehensive PQC benchmark suite...")
-        
-        results = {
-            'benchmark_type': 'Comprehensive PQC',
-            'iterations': iterations,
-            'message_sizes': message_sizes,
-            'system_info': get_pqc_system_info()
+
+    def benchmark_sig(self, algorithm: str) -> Dict[str, Any]:
+        if algorithm not in SIG_ALG_MAP:
+            return {"status": "skipped", "reason": f"unsupported SIG: {algorithm}"}
+        oqs_alg = SIG_ALG_MAP[algorithm]
+        enabled = list(getattr(oqs, "get_enabled_sig_mechanisms", lambda: [])())  # type: ignore[attr-defined]
+        if oqs_alg not in enabled:
+            return {"status": "skipped", "reason": f"SIG not enabled in liboqs: {oqs_alg}"}
+
+        keygen_times: List[float] = []
+        sign_times: List[float] = []
+        verify_times: List[float] = []
+        msg = b"\x00" * self.message_size
+
+        # Warmup
+        with oqs.Signature(oqs_alg) as sig:  # type: ignore[attr-defined]
+            for _ in range(self.warmup):
+                pk = sig.generate_keypair()
+                s = sig.sign(msg)
+                sig.verify(msg, s, pk)
+
+        # Timed loops
+        with oqs.Signature(oqs_alg) as sig:  # type: ignore[attr-defined]
+            pubkey = None
+            for _ in range(self.iterations):
+                t0 = time.perf_counter()
+                pubkey = sig.generate_keypair()
+                t1 = time.perf_counter()
+                keygen_times.append(t1 - t0)
+
+            for _ in range(self.iterations):
+                t0 = time.perf_counter()
+                s = sig.sign(msg)
+                t1 = time.perf_counter()
+                sign_times.append(t1 - t0)
+                t2 = time.perf_counter()
+                sig.verify(msg, s, pubkey)  # type: ignore[arg-type]
+                t3 = time.perf_counter()
+                verify_times.append(t3 - t2)
+
+            sizes = {
+                "public_key_bytes": sig.length_public_key,
+                "secret_key_bytes": sig.length_secret_key,
+                "signature_bytes": sig.length_signature,
+            }
+
+        return {
+            "status": "ok",
+            "algorithm": algorithm,
+            "oqs_algorithm": oqs_alg,
+            "type": "SIG",
+            "iterations": self.iterations,
+            "message_size": self.message_size,
+            "sizes": sizes,
+            "operations": {
+                "keygen": _stats_ms(keygen_times),
+                "sign": _stats_ms(sign_times),
+                "verify": _stats_ms(verify_times),
+            },
         }
-        
-        # 1. Benchmark Kyber768 KEM
+
+    def run_comprehensive_pqc_benchmark(
+        self,
+        algorithms: Optional[List[str]] = None,
+        iterations: Optional[int] = None,
+        warmup: Optional[int] = None,
+        message_size: Optional[int] = None,
+        **_: Any
+    ) -> Dict[str, Any]:
+        """Aggregate benchmarks; accepts overrides and optional algorithms."""
+        prev_iters, prev_warmup, prev_msg = self._override_once(iterations, warmup, message_size)
         try:
-            results['kyber768'] = self.benchmark_kyber768(iterations)
-        except Exception as e:
-            print(f"    Kyber768 benchmark failed: {e}")
-            results['kyber768'] = {'error': str(e)}
-        
-        # 2. Benchmark Dilithium2 for each message size
-        results['dilithium2'] = {}
-        for size in message_sizes:
-            try:
-                results['dilithium2'][f'{size}B'] = self.benchmark_dilithium2(
-                    iterations, message_size=size
-                )
-            except Exception as e:
-                print(f"    Dilithium2 benchmark failed for {size}B: {e}")
-                results['dilithium2'][f'{size}B'] = {'error': str(e)}
-        
-        # 3. Benchmark full PQC protocol for each message size
-        results['full_protocol'] = {}
-        for size in message_sizes:
-            try:
-                results['full_protocol'][f'{size}B'] = self.benchmark_full_pqc_protocol(
-                    iterations, message_size=size
-                )
-            except Exception as e:
-                print(f"    Full PQC protocol benchmark failed for {size}B: {e}")
-                results['full_protocol'][f'{size}B'] = {'error': str(e)}
-        
-        return results
+            # Default to all enabled algorithms if not provided
+            if algorithms is None:
+                algorithms = []
+                info = get_pqc_system_info()
+                if info.get("liboqs_available"):
+                    enabled_kems = set(info.get("enabled_kems", []))
+                    enabled_sigs = set(info.get("enabled_sigs", []))
+                    for name, mech in KEM_ALG_MAP.items():
+                        if mech in enabled_kems:
+                            algorithms.append(name)
+                    for name, mech in SIG_ALG_MAP.items():
+                        if mech in enabled_sigs:
+                            algorithms.append(name)
+
+            results: Dict[str, Any] = {"system_info": get_pqc_system_info(), "algorithms": {}}
+            for alg in algorithms:
+                try:
+                    if alg in KEM_ALG_MAP:
+                        results["algorithms"][alg] = self.benchmark_kem(alg)
+                    elif alg in SIG_ALG_MAP:
+                        results["algorithms"][alg] = self.benchmark_sig(alg)
+                    else:
+                        results["algorithms"][alg] = {"status": "skipped", "reason": "unsupported"}
+                except Exception as e:
+                    results["algorithms"][alg] = {"status": "failed", "error": str(e)}
+            return results
+        finally:
+            self.iterations, self.warmup, self.message_size = prev_iters, prev_warmup, prev_msg
 
 
 if __name__ == "__main__":
-    """Test PQC benchmarks."""
     if not OQS_AVAILABLE:
-        print("liboqs-python not available, cannot run PQC benchmarks")
-        exit(1)
-    
-    print("Testing PQC benchmarks...")
-    bench = PQCBenchmark()
-    
-    # Quick test
-    results = bench.run_comprehensive_pqc_benchmark(iterations=5, message_sizes=[256])
-    
-    print(f"\nPQC Benchmark Results:")
-    if 'kyber768' in results and 'operations' in results['kyber768']:
-        kyber = results['kyber768']['operations']
-        print(f"  Kyber768 - Keygen: {kyber['keygen']['mean_ms']:.2f}ms, "
-              f"Encaps: {kyber['encaps']['mean_ms']:.2f}ms, "
-              f"Decaps: {kyber['decaps']['mean_ms']:.2f}ms")
-    
-    if 'dilithium2' in results and '256B' in results['dilithium2']:
-        if 'operations' in results['dilithium2']['256B']:
-            dil = results['dilithium2']['256B']['operations']
-            print(f"  Dilithium2 - Keygen: {dil['keygen']['mean_ms']:.2f}ms, "
-                  f"Sign: {dil['sign']['mean_ms']:.2f}ms, "
-                  f"Verify: {dil['verify']['mean_ms']:.2f}ms")
-    
-    print("PQC benchmarks completed!")
+        print("liboqs-python (oqs) not installed; PQC benchmarks cannot run.")
+    else:
+        print("Testing PQC benchmarks (quick)...")
+        bench = PQCBenchmark(iterations=5, warmup=1)
+        print(bench.benchmark_kem("kyber768"))
+        print(bench.benchmark_sig("dilithium2"))

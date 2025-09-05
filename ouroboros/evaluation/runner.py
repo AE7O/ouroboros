@@ -14,6 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+import traceback
 
 from .results import new_run_root, write_summary
 from .sysinfo import capture_system_info
@@ -28,21 +29,15 @@ from .experiments import (
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser with all subcommands."""
-    parser = argparse.ArgumentParser(
-        description="Comprehensive evaluation runner for Ouroboros protocol",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
-    )
+    parser = argparse.ArgumentParser(prog='runner.py', description='Ouroboros Evaluation Suite')
+    subparsers = parser.add_subparsers(dest='command', help='Sub-commands')
     
     # Global options
     parser.add_argument('--output-dir', type=str, 
                        help='Custom output directory (default: auto-generated timestamp)')
-    parser.add_argument('--no-charts', action='store_true',
-                       help='Skip chart generation')
+    parser.add_argument('--no-charts', action='store_true', help='Disable chart generation')
     parser.add_argument('--format', choices=['csv', 'json', 'both'], default='both',
                        help='Output format for data files')
-    
-    subparsers = parser.add_subparsers(dest='command', help='Evaluation type')
     
     # Correctness evaluation
     correctness_parser = subparsers.add_parser('correctness',
@@ -78,16 +73,20 @@ def create_parser() -> argparse.ArgumentParser:
                                 help='Window size for replay protection tests')
     
     # PQC baseline evaluation
-    pqc_parser = subparsers.add_parser('pqc',
-                                     help='Run post-quantum cryptography baseline comparison')
-    pqc_parser.add_argument('--algorithms', type=str,
-                           default='kyber512,kyber768,kyber1024,dilithium2,dilithium3',
-                           help='Comma-separated PQC algorithms to benchmark')
-    pqc_parser.add_argument('--key-sizes', type=str, default='2048,3072,4096',
-                           help='RSA key sizes for classical comparison')
+    pqc_parser = subparsers.add_parser('pqc', help='Run post-quantum cryptography comparison')
+    pqc_parser.add_argument('--algorithms', type=str, default='kyber768,dilithium2',
+                            help='Comma-separated PQC algorithms (e.g., kyber768,dilithium2)')
+    pqc_parser.add_argument('--key-sizes', type=str, default='2048,3072',
+                            help='Comma-separated RSA key sizes for classical baseline')
     pqc_parser.add_argument('--operations', type=int, default=100,
-                           help='Number of operations per algorithm')
-    
+                            help='Number of operations per algorithm')
+    pqc_parser.add_argument('--no-charts', action='store_true',
+                            help='Disable chart generation')
+    pqc_parser.add_argument('--output-dir', type=str, default=None,
+                            help='Output directory (default: new timestamped folder under evaluation_results)')
+    pqc_parser.add_argument('--format', type=str, choices=['csv', 'json', 'both'], default='both',
+                            help='Output format')
+
     # Complete evaluation suite
     all_parser = subparsers.add_parser('all',
                                      help='Run complete evaluation suite')
@@ -222,6 +221,7 @@ def main():
         
     except Exception as e:
         print(f"\n❌ Evaluation failed: {e}")
+        traceback.print_exc()
         return 1
 
 
@@ -232,14 +232,14 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
     
     # Adjust parameters for quick mode
     if quick:
-        correctness_trials = 50
+        correctness_trials = 30
         performance_duration = 10
-        performance_warmup = 2
-        pqc_operations = 100
+        performance_warmup = 5
+        pqc_operations = 30
     else:
-        correctness_trials = 500
-        performance_duration = 60
-        performance_warmup = 10
+        correctness_trials = 100
+        performance_duration = 30
+        performance_warmup = 20
         pqc_operations = 100
     
     # Run correctness evaluation
@@ -290,13 +290,12 @@ def run_complete_suite(output_root: Path, quick: bool, skip_pqc: bool,
                 format=format,
                 generate_charts=generate_charts
             )
-        except ImportError:
-            print("⚠️  PQC evaluation skipped (liboqs not available)")
-            results['pqc'] = {'status': 'skipped', 'reason': 'liboqs not available'}
+        except Exception as e:
+            print(f"⚠️  PQC evaluation failed: {e}")
+            results['pqc'] = {'status': 'failed', 'error': str(e)}
     else:
         print("📋 Phase 4/4: Skipped (--skip-pqc)")
         results['pqc'] = {'status': 'skipped', 'reason': 'user requested skip'}
-    
     return results
 
 

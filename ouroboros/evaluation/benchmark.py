@@ -6,7 +6,10 @@ performance, memory usage, and protocol overhead for dissertation evaluation.
 """
 
 import time
-import psutil
+try:
+    import psutil
+except Exception:
+    psutil = None  # type: ignore
 import statistics
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
@@ -51,9 +54,10 @@ class PerformanceBenchmark:
         Returns:
             Dictionary with memory statistics in MB
         """
+        if psutil is None:
+            return {'rss': 0.0, 'vms': 0.0, 'percent': 0.0}
         process = psutil.Process()
         memory_info = process.memory_info()
-        
         return {
             'rss': memory_info.rss / 1024 / 1024,  # MB
             'vms': memory_info.vms / 1024 / 1024,  # MB
@@ -418,6 +422,7 @@ def run_comprehensive_benchmark(quick: bool = False) -> Dict[str, Any]:
     Returns:
         Complete benchmark results
     """
+    print("DEPRECATED: use ouroboros.evaluation.runner.run_complete_suite instead")
     benchmark = PerformanceBenchmark()
     
     if quick:

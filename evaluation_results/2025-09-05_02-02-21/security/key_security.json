@@ -1,6 +1,0 @@
-{
-  "forward_secrecy": true,
-  "key_isolation": true,
-  "ratcheting_security": true,
-  "tests_run": 25
-}

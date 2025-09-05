@@ -2,9 +2,8 @@
 Chart generation for Ouroboros evaluation results.
 """
 
+from typing import Any, Dict, List
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-import json
 
 
 def generate_performance_charts(output_root: Path, results: Dict[str, Any]):
@@ -18,11 +17,13 @@ def generate_performance_charts(output_root: Path, results: Dict[str, Any]):
         charts_dir.mkdir(exist_ok=True)
         
         # Throughput charts
-        generate_throughput_chart(charts_dir, results['throughput'])
-        
-        # Latency charts  
-        generate_latency_chart(charts_dir, results['latency'])
-        
+        if results.get('throughput'):
+            generate_throughput_chart(charts_dir, results['throughput'])
+
+        # Latency charts (now expect ms fields)
+        if results.get('latency'):
+            generate_latency_chart(charts_dir, results['latency'])
+
         # Memory charts (if available)
         if results.get('memory'):
             generate_memory_chart(charts_dir, results['memory'])
@@ -36,22 +37,14 @@ def generate_performance_charts(output_root: Path, results: Dict[str, Any]):
 def generate_pqc_charts(output_root: Path, results: Dict[str, Any]):
     """Generate PQC comparison charts."""
     try:
-        import matplotlib.pyplot as plt
-        import numpy as np
-        
-        charts_dir = output_root / 'charts'
-        charts_dir.mkdir(exist_ok=True)
-        
-        # PQC vs Classical performance comparison
-        generate_pqc_performance_chart(charts_dir, results)
-        
-        # Key size comparison
-        generate_key_size_chart(charts_dir, results)
-        
-        print(f"      PQC charts saved to: {charts_dir}")
-        
-    except ImportError:
+        import matplotlib.pyplot as plt  # noqa: F401
+    except Exception:
         print("      matplotlib not available - PQC charts skipped")
+        return
+    charts_dir = output_root / 'charts'
+    charts_dir.mkdir(exist_ok=True)
+    generate_pqc_performance_chart(charts_dir, results)
+    generate_key_size_chart(charts_dir, results)
 
 
 def generate_throughput_chart(charts_dir: Path, throughput_data: Dict[str, Any]):
@@ -120,16 +113,24 @@ def generate_latency_chart(charts_dir: Path, latency_data: Dict[str, Any]):
     import matplotlib.pyplot as plt
     import numpy as np
     
-    operations = list(latency_data.keys())
+    operations = []
     mean_latencies = []
     p95_latencies = []
     p99_latencies = []
-    
-    for op in operations:
-        data = latency_data[op]
-        mean_latencies.append(data['mean_us'])
-        p95_latencies.append(data['p95_us'])
-        p99_latencies.append(data['p99_us'])
+
+    for op, data in latency_data.items():
+        mean = data.get('mean_ms')
+        p95 = data.get('p95_ms')
+        p99 = data.get('p99_ms')
+        if mean is None or p95 is None or p99 is None:
+            continue
+        operations.append(op)
+        mean_latencies.append(mean)
+        p95_latencies.append(p95)
+        p99_latencies.append(p99)
+
+    if not operations:
+        return
     
     # Create the chart
     x = np.arange(len(operations))
@@ -145,8 +146,8 @@ def generate_latency_chart(charts_dir: Path, latency_data: Dict[str, Any]):
                    label='99th Percentile', alpha=0.8, color='#A11D21')
     
     ax.set_xlabel('Operation')
-    ax.set_ylabel('Latency (microseconds)')
-    ax.set_title('Ouroboros Operation Latency Distribution')
+    ax.set_ylabel('Latency (milliseconds)')
+    ax.set_title('Ouroboros Operation Latency Distribution (ms)')
     ax.set_xticks(x)
     ax.set_xticklabels([op.replace('_', ' ').title() for op in operations], rotation=45, ha='right')
     ax.legend()
@@ -155,10 +156,10 @@ def generate_latency_chart(charts_dir: Path, latency_data: Dict[str, Any]):
     # Use log scale for better visibility if needed
     if max(p99_latencies) > 10 * max(mean_latencies):
         ax.set_yscale('log')
-        ax.set_ylabel('Latency (microseconds, log scale)')
+        ax.set_ylabel('Latency (milliseconds, log scale)')
     
     plt.tight_layout()
-    plt.savefig(charts_dir / 'latency_distribution.png', dpi=300, bbox_inches='tight')
+    plt.savefig(charts_dir / 'latency_ms.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 
@@ -204,126 +205,101 @@ def generate_pqc_performance_chart(charts_dir: Path, results: Dict[str, Any]):
     """Generate PQC vs Classical performance comparison chart."""
     import matplotlib.pyplot as plt
     import numpy as np
-    
-    pqc_data = results['pqc_results']
-    classical_data = results['classical_results']
-    
-    # Prepare data
-    algorithms = list(pqc_data.keys()) + list(classical_data.keys())
-    keygen_times = []
-    operation_times = []  # sign/encrypt times
-    verify_times = []     # verify/decrypt times
-    
-    for alg in pqc_data.keys():
-        data = pqc_data[alg]
-        keygen_times.append(data['keygen_ms'])
-        
-        if 'sign_ms' in data:
-            operation_times.append(data['sign_ms'])
-            verify_times.append(data['verify_ms'])
+
+    pqc_data = results.get('pqc_results', {})
+    classical_data = results.get('classical_results', {})
+
+    algorithms: List[str] = []
+    keygen_times: List[float] = []
+    op_times: List[float] = []
+    verify_times: List[float] = []
+
+    # Real PQC shape: {'algorithms': {alg: {'operations': {...}}}}
+    algs = (pqc_data or {}).get('algorithms', {})
+    for alg, data in algs.items():
+        ops = (data or {}).get('operations', {})
+        algorithms.append(alg)
+        keygen_times.append(float(ops.get('keygen', {}).get('mean_ms') or 0.0))
+        if 'sign' in ops:
+            op_times.append(float(ops.get('sign', {}).get('mean_ms') or 0.0))
+            verify_times.append(float(ops.get('verify', {}).get('mean_ms') or 0.0))
         else:
-            operation_times.append(data['encaps_ms'])
-            verify_times.append(data['decaps_ms'])
-    
-    for alg in classical_data.keys():
-        data = classical_data[alg]
-        keygen_times.append(data['keygen_ms'])
-        operation_times.append(data.get('sign_ms', data.get('encrypt_ms', 0)))
-        verify_times.append(data.get('verify_ms', data.get('decrypt_ms', 0)))
-    
-    # Create chart
+            op_times.append(float(ops.get('encaps', {}).get('mean_ms') or 0.0))
+            verify_times.append(float(ops.get('decaps', {}).get('mean_ms') or 0.0))
+
+    # Optionally include classical baseline if present (expect same flat keys)
+    for alg, data in (classical_data or {}).items():
+        if not isinstance(data, dict):
+            continue
+        algorithms.append(alg)
+        keygen_times.append(float(data.get('keygen_ms', 0.0)))
+        op_times.append(float(data.get('sign_ms', data.get('encrypt_ms', 0.0))))
+        verify_times.append(float(data.get('verify_ms', data.get('decrypt_ms', 0.0))))
+
+    if not algorithms:
+        return
+
     x = np.arange(len(algorithms))
     width = 0.25
-    
-    fig, ax = plt.subplots(figsize=(16, 8))
-    
-    bars1 = ax.bar(x - width, keygen_times, width, 
-                   label='Key Generation', alpha=0.8, color='#1f77b4')
-    bars2 = ax.bar(x, operation_times, width,
-                   label='Sign/Encrypt', alpha=0.8, color='#ff7f0e')
-    bars3 = ax.bar(x + width, verify_times, width,
-                   label='Verify/Decrypt', alpha=0.8, color='#2ca02c')
-    
-    ax.set_xlabel('Algorithm')
-    ax.set_ylabel('Time (milliseconds)')
-    ax.set_title('PQC vs Classical Cryptography Performance Comparison')
+    fig, ax = plt.subplots(figsize=(14, 8))
+    ax.bar(x - width, keygen_times, width, label='Keygen')
+    ax.bar(x, op_times, width, label='Sign/Encaps')
+    ax.bar(x + width, verify_times, width, label='Verify/Decaps')
+    ax.set_title('PQC Performance (ms)')
     ax.set_xticks(x)
-    ax.set_xticklabels(algorithms, rotation=45, ha='right')
+    ax.set_xticklabels(algorithms, rotation=30, ha='right')
+    ax.set_ylabel('Milliseconds (log)')
+    ax.set_yscale('log')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
-    # Use log scale due to wide range
-    ax.set_yscale('log')
-    ax.set_ylabel('Time (milliseconds, log scale)')
-    
-    plt.tight_layout()
-    plt.savefig(charts_dir / 'pqc_performance_comparison.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    fig.tight_layout()
+    fig.savefig(charts_dir / 'pqc_performance_comparison.png', dpi=300)
+    plt.close(fig)
 
 
 def generate_key_size_chart(charts_dir: Path, results: Dict[str, Any]):
     """Generate key size comparison chart."""
     import matplotlib.pyplot as plt
     import numpy as np
-    
-    pqc_data = results['pqc_results']
-    classical_data = results['classical_results']
-    
-    # Prepare data
-    algorithms = list(pqc_data.keys()) + list(classical_data.keys())
-    pubkey_sizes = []
-    seckey_sizes = []
-    
-    for alg in pqc_data.keys():
-        data = pqc_data[alg]
-        pubkey_sizes.append(data['pubkey_size'])
-        seckey_sizes.append(data['seckey_size'])
-    
-    for alg in classical_data.keys():
-        # RSA has same size for public and private keys (approximately)
-        key_size = int(alg.split('_')[1]) // 8  # bits to bytes
-        pubkey_sizes.append(key_size)
-        seckey_sizes.append(key_size)
-    
-    # Create chart
+
+    pqc_data = results.get('pqc_results', {})
+    classical_data = results.get('classical_results', {})
+
+    algorithms: List[str] = []
+    pubkey_bytes: List[int] = []
+    seckey_bytes: List[int] = []
+
+    algs = (pqc_data or {}).get('algorithms', {})
+    for alg, data in algs.items():
+        sizes = (data or {}).get('sizes', {})
+        algorithms.append(alg)
+        pubkey_bytes.append(int(sizes.get('public_key_bytes') or 0))
+        seckey_bytes.append(int(sizes.get('secret_key_bytes') or 0))
+
+    for alg, data in (classical_data or {}).items():
+        if not isinstance(data, dict):
+            continue
+        algorithms.append(alg)
+        pubkey_bytes.append(int(data.get('pubkey_size', 0)))
+        seckey_bytes.append(int(data.get('seckey_size', 0)))
+
+    if not algorithms:
+        return
+
     x = np.arange(len(algorithms))
     width = 0.35
-    
     fig, ax = plt.subplots(figsize=(14, 8))
-    
-    bars1 = ax.bar(x - width/2, pubkey_sizes, width, 
-                   label='Public Key', alpha=0.8, color='#9467bd')
-    bars2 = ax.bar(x + width/2, seckey_sizes, width,
-                   label='Secret Key', alpha=0.8, color='#d62728')
-    
-    ax.set_xlabel('Algorithm')
-    ax.set_ylabel('Key Size (bytes)')
-    ax.set_title('Cryptographic Key Sizes: PQC vs Classical')
+    ax.bar(x - width/2, pubkey_bytes, width, label='Public Key')
+    ax.bar(x + width/2, seckey_bytes, width, label='Secret Key')
+    ax.set_title('Key Sizes (bytes)')
     ax.set_xticks(x)
-    ax.set_xticklabels(algorithms, rotation=45, ha='right')
+    ax.set_xticklabels(algorithms, rotation=30, ha='right')
+    ax.set_ylabel('Bytes')
     ax.legend()
     ax.grid(True, alpha=0.3)
-    
-    # Add value labels
-    for bar in bars1:
-        height = bar.get_height()
-        ax.annotate(f'{height:,}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),
-                    textcoords="offset points",
-                    ha='center', va='bottom', fontsize=8, rotation=90)
-    
-    for bar in bars2:
-        height = bar.get_height()
-        ax.annotate(f'{height:,}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),
-                    textcoords="offset points",
-                    ha='center', va='bottom', fontsize=8, rotation=90)
-    
-    plt.tight_layout()
-    plt.savefig(charts_dir / 'key_size_comparison.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    fig.tight_layout()
+    fig.savefig(charts_dir / 'key_sizes.png', dpi=300)
+    plt.close(fig)
 
 
 def generate_summary_chart(output_root: Path, all_results: Dict[str, Any]):
