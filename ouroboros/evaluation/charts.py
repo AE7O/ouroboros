@@ -373,257 +373,232 @@ def generate_summary_chart(output_root: Path, all_results: Dict[str, Any]):
         print("      matplotlib not available - summary chart skipped")
 
 
-def generate_comparison_charts(output_root: Path, comparison_results: Dict[str, Any]):
-    """Generate Ouroboros vs PQC comparison charts."""
+def generate_comparison_charts(charts_dir: Path, results: Dict[str, Any]):
+    """Generate comparison charts between Ouroboros and PQC."""
     try:
-        import matplotlib.pyplot as plt
-        import numpy as np
-        
-        charts_dir = output_root / 'charts'
-        charts_dir.mkdir(exist_ok=True)
-        
-        # Generate latency comparison
-        generate_latency_comparison_chart(charts_dir, comparison_results)
-        
-        # Generate throughput comparison
-        generate_throughput_comparison_chart(charts_dir, comparison_results)
-        
-        # Generate size overhead comparison
-        generate_size_overhead_chart(charts_dir, comparison_results)
-        
-        print(f"      Comparison charts saved to: {charts_dir}")
-        
-    except ImportError:
+        import matplotlib.pyplot as plt  # noqa: F401
+    except Exception:
         print("      matplotlib not available - comparison charts skipped")
-
-
-def generate_latency_comparison_chart(charts_dir: Path, results: Dict[str, Any]):
-    """Generate latency comparison between Ouroboros and PQC."""
-    import matplotlib.pyplot as plt
-    import numpy as np
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-    
-    # Extract Ouroboros data
-    ouroboros_data = results.get('ouroboros_results', {})
-    pqc_data = results.get('pqc_results', {})
-    
-    # Chart 1: Full Protocol Comparison
-    protocols = []
-    latencies = []
-    colors = []
-    
-    # Ouroboros full roundtrip
-    if 'full_protocol' in ouroboros_data:
-        for size, data in ouroboros_data['full_protocol'].items():
-            if 'operations' in data and 'full_roundtrip' in data['operations']:
-                protocols.append(f'Ouroboros\n({size})')
-                latencies.append(data['operations']['full_roundtrip']['mean_ms'])
-                colors.append('#2E8B57')
-    
-    # PQC full protocol
-    if 'full_protocol' in pqc_data:
-        for size, data in pqc_data['full_protocol'].items():
-            if 'operations' in data and 'full_protocol' in data['operations']:
-                protocols.append(f'PQC\n({size})')
-                latencies.append(data['operations']['full_protocol']['mean_ms'])
-                colors.append('#C73E1D')
-    
-    if protocols and latencies:
-        bars = ax1.bar(protocols, latencies, color=colors, alpha=0.8)
-        ax1.set_ylabel('Latency (milliseconds)')
-        ax1.set_title('Full Protocol Latency Comparison')
-        ax1.grid(True, alpha=0.3)
+        return
         
-        # Add value labels
-        for bar, latency in zip(bars, latencies):
-            height = bar.get_height()
-            ax1.annotate(f'{latency:.2f}ms',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontweight='bold')
+    charts_dir.mkdir(exist_ok=True)
     
-    # Chart 2: Individual Operations Comparison
-    operations = []
-    ouroboros_times = []
-    pqc_times = []
-    
-    # Ouroboros operations
-    if 'isolated_operations' in ouroboros_data:
-        ops_data = ouroboros_data['isolated_operations']
-        if 'ratchet' in ops_data:
-            operations.append('Key Derivation')
-            ouroboros_times.append(ops_data['ratchet']['mean_ms'])
-            # PQC equivalent: Kyber keygen
-            if 'kyber768' in pqc_data and 'operations' in pqc_data['kyber768']:
-                pqc_times.append(pqc_data['kyber768']['operations'].get('keygen', {}).get('mean_ms', 0))
-            else:
-                pqc_times.append(0)
-    
-    if operations and ouroboros_times and pqc_times:
-        x = np.arange(len(operations))
-        width = 0.35
-        
-        bars1 = ax2.bar(x - width/2, ouroboros_times, width, 
-                       label='Ouroboros', alpha=0.8, color='#2E8B57')
-        bars2 = ax2.bar(x + width/2, pqc_times, width,
-                       label='PQC', alpha=0.8, color='#C73E1D')
-        
-        ax2.set_xlabel('Operation')
-        ax2.set_ylabel('Latency (milliseconds)')
-        ax2.set_title('Individual Operations Comparison')
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(operations)
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        
-        # Add value labels
-        for bars in [bars1, bars2]:
-            for bar in bars:
-                height = bar.get_height()
-                if height > 0:
-                    ax2.annotate(f'{height:.2f}',
-                                xy=(bar.get_x() + bar.get_width() / 2, height),
-                                xytext=(0, 3),
-                                textcoords="offset points",
-                                ha='center', va='bottom', fontsize=9)
-    
-    plt.tight_layout()
-    plt.savefig(charts_dir / 'latency_comparison.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
+    # Generate individual comparison charts
+    generate_throughput_comparison_chart(charts_dir, results)
+    generate_latency_comparison_chart(charts_dir, results)
+    generate_size_overhead_chart(charts_dir, results)
 
 def generate_throughput_comparison_chart(charts_dir: Path, results: Dict[str, Any]):
-    """Generate throughput comparison chart."""
+    """Generate throughput comparison chart between Ouroboros and PQC."""
     import matplotlib.pyplot as plt
     import numpy as np
-    
-    fig, ax = plt.subplots(figsize=(12, 8))
     
     ouroboros_data = results.get('ouroboros_results', {})
     pqc_data = results.get('pqc_results', {})
     
-    # Collect throughput data
-    protocols = []
-    throughputs = []
-    colors = []
+    # Extract Ouroboros throughput data
+    ouroboros_full = ouroboros_data.get('full_protocol', {})
+    ouroboros_labels = []
+    ouroboros_throughput = []
     
-    # Ouroboros throughput (ops/sec)
-    if 'full_protocol' in ouroboros_data:
-        for size, data in ouroboros_data['full_protocol'].items():
-            if 'operations' in data and 'full_roundtrip' in data['operations']:
-                protocols.append(f'Ouroboros\n({size})')
-                throughputs.append(data['operations']['full_roundtrip']['ops_per_sec'])
-                colors.append('#2E8B57')
+    for size_str, data in ouroboros_full.items():
+        if size_str.endswith('_bytes') and isinstance(data, dict):
+            size = size_str.replace('_bytes', '')
+            throughput_pps = data.get('throughput_pps', 0)
+            if throughput_pps > 0:
+                ouroboros_labels.append(f"Ouroboros {size}B")
+                ouroboros_throughput.append(throughput_pps)
     
-    # PQC throughput (ops/sec)
-    if 'full_protocol' in pqc_data:
-        for size, data in pqc_data['full_protocol'].items():
-            if 'operations' in data and 'full_protocol' in data['operations']:
-                protocols.append(f'PQC\n({size})')
-                throughputs.append(data['operations']['full_protocol']['ops_per_sec'])
-                colors.append('#C73E1D')
+    # Extract PQC throughput data (convert operation timing to ops/sec)
+    pqc_labels = []
+    pqc_throughput = []
     
-    if protocols and throughputs:
-        bars = ax.bar(protocols, throughputs, color=colors, alpha=0.8)
-        ax.set_ylabel('Throughput (operations/second)')
-        ax.set_title('Protocol Throughput Comparison')
-        ax.grid(True, alpha=0.3)
+    pqc_algorithms = pqc_data.get('algorithms', {})
+    for alg_name, alg_data in pqc_algorithms.items():
+        if alg_data.get('status') == 'ok':
+            operations = alg_data.get('operations', {})
+            # Use keygen as the primary operation for throughput comparison
+            keygen_stats = operations.get('keygen', {})
+            if 'mean_ms' in keygen_stats and keygen_stats['mean_ms'] > 0:
+                # Convert ms per operation to operations per second
+                ops_per_sec = 1000.0 / keygen_stats['mean_ms']
+                pqc_labels.append(f"{alg_name} keygen")
+                pqc_throughput.append(ops_per_sec)
+    
+    # Create comparison chart
+    all_labels = ouroboros_labels + pqc_labels
+    all_throughput = ouroboros_throughput + pqc_throughput
+    colors = ['blue'] * len(ouroboros_labels) + ['red'] * len(pqc_labels)
+    
+    if not all_labels:
+        print("      No throughput data available for comparison chart")
+        return
         
-        # Use log scale if there's a large difference
-        if max(throughputs) > 10 * min(throughputs):
-            ax.set_yscale('log')
-            ax.set_ylabel('Throughput (operations/second, log scale)')
-        
-        # Add value labels
-        for bar, throughput in zip(bars, throughputs):
-            height = bar.get_height()
-            ax.annotate(f'{throughput:.0f}',
-                       xy=(bar.get_x() + bar.get_width() / 2, height),
-                       xytext=(0, 3),
-                       textcoords="offset points",
-                       ha='center', va='bottom', fontweight='bold')
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bars = ax.bar(range(len(all_labels)), all_throughput, color=colors, alpha=0.7)
+    
+    ax.set_title('Throughput Comparison: Ouroboros vs Post-Quantum Cryptography')
+    ax.set_xlabel('Operations')
+    ax.set_ylabel('Operations per Second')
+    ax.set_xticks(range(len(all_labels)))
+    ax.set_xticklabels(all_labels, rotation=45, ha='right')
+    ax.set_yscale('log')
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='blue', alpha=0.7, label='Ouroboros (packets/sec)'),
+        Patch(facecolor='red', alpha=0.7, label='PQC (key operations/sec)')
+    ]
+    ax.legend(handles=legend_elements)
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.savefig(charts_dir / 'throughput_comparison.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-
-def generate_size_overhead_chart(charts_dir: Path, results: Dict[str, Any]):
-    """Generate protocol overhead comparison chart."""
+def generate_latency_comparison_chart(charts_dir: Path, results: Dict[str, Any]):
+    """Generate latency comparison chart between Ouroboros and PQC."""
     import matplotlib.pyplot as plt
     import numpy as np
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     
     ouroboros_data = results.get('ouroboros_results', {})
     pqc_data = results.get('pqc_results', {})
     
-    # Chart 1: Absolute Overhead Sizes
-    protocols = ['Ouroboros Header']
-    overheads = [25]  # Ouroboros fixed header
-    colors = ['#2E8B57']
+    # Extract Ouroboros latency data
+    ouroboros_ops = ouroboros_data.get('isolated_operations', {})
+    ouroboros_labels = []
+    ouroboros_latencies = []
     
-    # Add PQC overheads
-    if 'kyber768' in pqc_data:
-        kyber_data = pqc_data['kyber768']
-        total_kyber_overhead = (
-            kyber_data.get('pk_size_bytes', 0) +
-            kyber_data.get('ciphertext_size_bytes', 0)
-        )
-        protocols.append('Kyber768\n(PK + CT)')
-        overheads.append(total_kyber_overhead)
-        colors.append('#FF7F0E')
+    for op_name, op_data in ouroboros_ops.items():
+        if isinstance(op_data, dict) and 'mean_ms' in op_data:
+            ouroboros_labels.append(f"Ouroboros {op_name.replace('_', ' ')}")
+            ouroboros_latencies.append(op_data['mean_ms'])
     
-    if 'dilithium2' in pqc_data:
-        # Use first available message size
-        dilithium_keys = list(pqc_data['dilithium2'].keys())
-        if dilithium_keys:
-            dilithium_data = pqc_data['dilithium2'][dilithium_keys[0]]
-            total_dilithium_overhead = (
-                dilithium_data.get('pk_size_bytes', 0) +
-                dilithium_data.get('signature_size_bytes', 0)
-            )
-            protocols.append('Dilithium2\n(PK + Sig)')
-            overheads.append(total_dilithium_overhead)
-            colors.append('#2CA02C')
+    # Extract PQC latency data (FIXED to use correct nested structure)
+    pqc_labels = []
+    pqc_latencies = []
     
-    if protocols and overheads:
-        bars = ax1.bar(protocols, overheads, color=colors, alpha=0.8)
-        ax1.set_ylabel('Overhead Size (bytes)')
-        ax1.set_title('Protocol Overhead Comparison')
-        ax1.grid(True, alpha=0.3)
+    pqc_algorithms = pqc_data.get('algorithms', {})
+    for alg_name, alg_data in pqc_algorithms.items():
+        if alg_data.get('status') == 'ok':
+            operations = alg_data.get('operations', {})
+            for op_name, op_stats in operations.items():
+                if isinstance(op_stats, dict) and 'mean_ms' in op_stats:
+                    pqc_labels.append(f"{alg_name} {op_name}")
+                    pqc_latencies.append(op_stats['mean_ms'])
+    
+    # Create combined comparison
+    all_labels = ouroboros_labels + pqc_labels
+    all_latencies = ouroboros_latencies + pqc_latencies
+    colors = ['blue'] * len(ouroboros_labels) + ['red'] * len(pqc_labels)
+    
+    if not all_labels:
+        print("      No latency data available for comparison chart")
+        return
         
-        # Add value labels
-        for bar, overhead in zip(bars, overheads):
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bars = ax.bar(range(len(all_labels)), all_latencies, color=colors, alpha=0.7)
+    
+    ax.set_title('Latency Comparison: Ouroboros vs Post-Quantum Cryptography')
+    ax.set_xlabel('Operations')
+    ax.set_ylabel('Latency (milliseconds)')
+    ax.set_xticks(range(len(all_labels)))
+    ax.set_xticklabels(all_labels, rotation=45, ha='right')
+    ax.set_yscale('log')
+    
+    # Add value labels on bars for better readability
+    for i, (bar, latency) in enumerate(zip(bars, all_latencies)):
+        height = bar.get_height()
+        ax.annotate(f'{latency:.2f}ms',
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom',
+                    fontsize=8, rotation=90)
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='blue', alpha=0.7, label='Ouroboros'),
+        Patch(facecolor='red', alpha=0.7, label='PQC Algorithms')
+    ]
+    ax.legend(handles=legend_elements)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(charts_dir / 'latency_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+def generate_size_overhead_chart(charts_dir: Path, results: Dict[str, Any]):
+    """Generate size overhead comparison chart between Ouroboros and PQC."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    ouroboros_data = results.get('ouroboros_results', {})
+    pqc_data = results.get('pqc_results', {})
+    
+    # Get Ouroboros overhead data
+    overhead_data = ouroboros_data.get('overhead_analysis', {})
+    ouroboros_overhead = overhead_data.get('total_overhead_bytes', 0)
+    
+    # Extract PQC key and signature/ciphertext sizes (FIXED structure navigation)
+    algorithms = []
+    pubkey_sizes = []
+    seckey_sizes = []
+    sig_or_ct_sizes = []
+    
+    pqc_algorithms = pqc_data.get('algorithms', {})
+    for alg_name, alg_data in pqc_algorithms.items():
+        if alg_data.get('status') == 'ok':
+            sizes = alg_data.get('sizes', {})
+            if sizes:  # Only include algorithms with size data
+                algorithms.append(alg_name)
+                pubkey_sizes.append(sizes.get('public_key_bytes', 0))
+                seckey_sizes.append(sizes.get('secret_key_bytes', 0))
+                # For KEM: ciphertext_bytes, for SIG: signature_bytes
+                sig_size = sizes.get('signature_bytes', 0)
+                ct_size = sizes.get('ciphertext_bytes', 0)
+                sig_or_ct_sizes.append(max(sig_size, ct_size))  # Use whichever is present
+    
+    if not algorithms:
+        print("      No PQC size data available for size overhead chart")
+        return
+        
+    # Create the size comparison chart
+    fig, ax = plt.subplots(figsize=(16, 8))
+    
+    x = np.arange(len(algorithms))
+    width = 0.25
+    
+    bars1 = ax.bar(x - width, pubkey_sizes, width, label='Public Key', alpha=0.8, color='lightcoral')
+    bars2 = ax.bar(x, seckey_sizes, width, label='Secret Key', alpha=0.8, color='lightblue')
+    bars3 = ax.bar(x + width, sig_or_ct_sizes, width, label='Signature/Ciphertext', alpha=0.8, color='lightgreen')
+    
+    # Add Ouroboros overhead as a horizontal line for reference
+    if ouroboros_overhead > 0:
+        ax.axhline(y=ouroboros_overhead, color='blue', linestyle='--', linewidth=2,
+                   label=f'Ouroboros Packet Overhead ({ouroboros_overhead} bytes)')
+    
+    ax.set_title('Size Comparison: PQC Keys/Signatures vs Ouroboros Packet Overhead')
+    ax.set_xlabel('PQC Algorithm')
+    ax.set_ylabel('Size (bytes)')
+    ax.set_xticks(x)
+    ax.set_xticklabels(algorithms, rotation=45, ha='right')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bars in [bars1, bars2, bars3]:
+        for bar in bars:
             height = bar.get_height()
-            ax1.annotate(f'{overhead:,}B',
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 3),
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontweight='bold')
-    
-    # Chart 2: Overhead Percentage for Different Message Sizes
-    message_sizes = [256, 1024, 4096]
-    ouroboros_percentages = [(25/size)*100 for size in message_sizes]
-    
-    ax2.plot(message_sizes, ouroboros_percentages, 'o-', 
-             label='Ouroboros (25B header)', linewidth=2, color='#2E8B57')
-    
-    # Add PQC overhead percentages if available
-    if overheads and len(overheads) > 1:
-        pqc_total_overhead = sum(overheads[1:])  # Sum of all PQC overheads
-        pqc_percentages = [(pqc_total_overhead/size)*100 for size in message_sizes]
-        ax2.plot(message_sizes, pqc_percentages, 's-',
-                 label=f'PQC ({pqc_total_overhead:,}B total)', linewidth=2, color='#C73E1D')
-    
-    ax2.set_xlabel('Message Size (bytes)')
-    ax2.set_ylabel('Overhead Percentage (%)')
-    ax2.set_title('Overhead as Percentage of Message Size')
-    ax2.set_xscale('log')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend()
+            if height > 0:
+                ax.annotate(f'{int(height):,}',
+                            xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3),
+                            textcoords="offset points",
+                            ha='center', va='bottom',
+                            fontsize=8)
     
     plt.tight_layout()
     plt.savefig(charts_dir / 'size_overhead.png', dpi=300, bbox_inches='tight')
