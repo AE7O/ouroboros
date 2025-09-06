@@ -319,3 +319,550 @@ class TestBenchmarkIntegration:
         # Verify overhead is reasonable
         assert overhead_percent >= 0  # Should have some overhead
         assert overhead_percent < 1000  # But not excessive
+
+
+# ============================================================================
+# EVALUATION FRAMEWORK INTEGRATION - REUSABLE PERFORMANCE FUNCTIONS
+# ============================================================================
+
+def run_individual_aead_performance_test_aes_gcm(payload_sizes: List[int] = None, 
+                                                iterations: int = 1000,
+                                                warmup_iterations: int = 100) -> Dict[str, Any]:
+    """
+    Reusable wrapper for individual AES-GCM AEAD performance testing.
+    Used by evaluation framework for comprehensive performance analysis.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    for payload_size in payload_sizes:
+        try:
+            # Create test environment using AEADCipher with AES-GCM
+            from ouroboros.crypto.aead import AEADCipher
+            from ouroboros.crypto.utils import generate_random_bytes
+            
+            cipher = AEADCipher(use_ascon=False)  # AES-GCM mode
+            plaintext = generate_random_bytes(payload_size)
+            key = generate_random_bytes(32)
+            nonce = generate_random_bytes(12)  # AES-GCM uses 12-byte nonce
+            associated_data = generate_random_bytes(16)
+            
+            # Warmup
+            for _ in range(warmup_iterations):
+                ciphertext, tag = cipher.encrypt(key, nonce, plaintext, associated_data)
+                cipher.decrypt(key, nonce, ciphertext, tag, associated_data)
+            
+            # Performance measurement
+            latencies = []
+            start_time = time.perf_counter()
+            
+            for _ in range(iterations):
+                op_start = time.perf_counter()
+                ciphertext, tag = cipher.encrypt(key, nonce, plaintext, associated_data)
+                op_end = time.perf_counter()
+                latencies.append((op_end - op_start) * 1000)  # ms
+            
+            end_time = time.perf_counter()
+            total_time = end_time - start_time
+            
+            # Calculate metrics
+            throughput_bytes_per_sec = (payload_size * iterations) / total_time
+            throughput_mbps = (throughput_bytes_per_sec * 8) / (1024 * 1024)
+            ops_per_sec = iterations / total_time
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'iterations': iterations,
+                'total_time_seconds': total_time,
+                'throughput_mbps': throughput_mbps,
+                'operations_per_second': ops_per_sec,
+                'latency_stats': {
+                    'mean': statistics.mean(latencies),
+                    'median': statistics.median(latencies),
+                    'min': min(latencies),
+                    'max': max(latencies),
+                    'std': statistics.stdev(latencies) if len(latencies) > 1 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            results[str(payload_size)] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    return results
+
+
+def run_individual_aead_performance_test_ascon(payload_sizes: List[int] = None,
+                                              iterations: int = 1000,
+                                              warmup_iterations: int = 100) -> Dict[str, Any]:
+    """
+    Reusable wrapper for individual ASCON AEAD performance testing.
+    Used by evaluation framework for comprehensive performance analysis.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    for payload_size in payload_sizes:
+        try:
+            # Create test environment using AEADCipher with ASCON
+            from ouroboros.crypto.aead import AEADCipher
+            from ouroboros.crypto.utils import generate_random_bytes
+            
+            cipher = AEADCipher(use_ascon=True)  # ASCON-AEAD mode
+            plaintext = generate_random_bytes(payload_size)
+            key = generate_random_bytes(16)  # ASCON uses 16-byte key
+            nonce = generate_random_bytes(16)  # ASCON uses 16-byte nonce
+            associated_data = generate_random_bytes(16)
+            
+            # Warmup
+            for _ in range(warmup_iterations):
+                ciphertext, tag = cipher.encrypt(key, nonce, plaintext, associated_data)
+                cipher.decrypt(key, nonce, ciphertext, tag, associated_data)
+            
+            # Performance measurement
+            latencies = []
+            start_time = time.perf_counter()
+            
+            for _ in range(iterations):
+                op_start = time.perf_counter()
+                ciphertext, tag = cipher.encrypt(key, nonce, plaintext, associated_data)
+                op_end = time.perf_counter()
+                latencies.append((op_end - op_start) * 1000)  # ms
+            
+            end_time = time.perf_counter()
+            total_time = end_time - start_time
+            
+            # Calculate metrics
+            throughput_bytes_per_sec = (payload_size * iterations) / total_time
+            throughput_mbps = (throughput_bytes_per_sec * 8) / (1024 * 1024)
+            ops_per_sec = iterations / total_time
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'iterations': iterations,
+                'total_time_seconds': total_time,
+                'throughput_mbps': throughput_mbps,
+                'operations_per_second': ops_per_sec,
+                'latency_stats': {
+                    'mean': statistics.mean(latencies),
+                    'median': statistics.median(latencies),
+                    'min': min(latencies),
+                    'max': max(latencies),
+                    'std': statistics.stdev(latencies) if len(latencies) > 1 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            results[str(payload_size)] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    return results
+
+
+def run_protocol_performance_test_aes(payload_sizes: List[int] = None,
+                                     iterations: int = 1000,
+                                     warmup_iterations: int = 100) -> Dict[str, Any]:
+    """
+    Reusable wrapper for complete Ouroboros protocol performance testing with AES.
+    Tests the full encryption → scrambling → packet → decryption pipeline.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    for payload_size in payload_sizes:
+        try:
+            # Setup protocol contexts
+            master_psk = generate_random_bytes(32)
+            channel_id = 42
+            
+            plaintext = generate_random_bytes(payload_size)
+            
+            # Warmup
+            for i in range(warmup_iterations):
+                # Use different channel IDs to avoid replay protection
+                warm_channel_id = (channel_id + 10000 + i) % 256
+                warm_encrypt = create_encryption_context(master_psk, warm_channel_id, use_ascon=False)
+                warm_decrypt = create_decryption_context(master_psk, warm_channel_id, use_ascon=False)
+                
+                packet = warm_encrypt.encrypt_message(plaintext)
+                warm_decrypt.decrypt_packet(packet.to_bytes())
+            
+            # Performance measurement
+            latencies = []
+            protocol_overheads = []
+            start_time = time.perf_counter()
+            
+            for i in range(iterations):
+                # Use different channel IDs for each iteration to avoid replay protection
+                # Keep channel ID within valid range (0-255)
+                test_channel_id = (channel_id + i) % 256
+                test_encrypt = create_encryption_context(master_psk, test_channel_id, use_ascon=False)
+                test_decrypt = create_decryption_context(master_psk, test_channel_id, use_ascon=False)
+                
+                op_start = time.perf_counter()
+                
+                # Complete protocol pipeline
+                packet = test_encrypt.encrypt_message(plaintext)
+                packet_bytes = packet.to_bytes()
+                decrypted = test_decrypt.decrypt_packet(packet_bytes)
+                
+                op_end = time.perf_counter()
+                
+                # Verify round-trip
+                assert decrypted == plaintext
+                
+                latencies.append((op_end - op_start) * 1000)  # ms
+                protocol_overheads.append(len(packet_bytes) - len(plaintext))
+            
+            end_time = time.perf_counter()
+            total_time = end_time - start_time
+            
+            # Calculate metrics
+            throughput_bytes_per_sec = (payload_size * iterations) / total_time
+            throughput_mbps = (throughput_bytes_per_sec * 8) / (1024 * 1024)
+            ops_per_sec = iterations / total_time
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'iterations': iterations,
+                'total_time_seconds': total_time,
+                'throughput_mbps': throughput_mbps,
+                'operations_per_second': ops_per_sec,
+                'protocol_overhead_bytes': statistics.mean(protocol_overheads),
+                'latency_stats': {
+                    'mean': statistics.mean(latencies),
+                    'median': statistics.median(latencies),
+                    'min': min(latencies),
+                    'max': max(latencies),
+                    'std': statistics.stdev(latencies) if len(latencies) > 1 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            results[str(payload_size)] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    return results
+
+
+def run_protocol_performance_test_ascon(payload_sizes: List[int] = None,
+                                       iterations: int = 1000,
+                                       warmup_iterations: int = 100) -> Dict[str, Any]:
+    """
+    Reusable wrapper for complete Ouroboros protocol performance testing with ASCON.
+    Tests the full encryption → scrambling → packet → decryption pipeline.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    for payload_size in payload_sizes:
+        try:
+            # Setup protocol contexts with ASCON
+            master_psk = generate_random_bytes(32)
+            channel_id = 42
+            
+            plaintext = generate_random_bytes(payload_size)
+            
+            # Warmup
+            for i in range(warmup_iterations):
+                warm_channel_id = (channel_id + 10000 + i) % 256
+                warm_encrypt = create_encryption_context(master_psk, warm_channel_id, use_ascon=True)
+                warm_decrypt = create_decryption_context(master_psk, warm_channel_id, use_ascon=True)
+                
+                packet = warm_encrypt.encrypt_message(plaintext)
+                warm_decrypt.decrypt_packet(packet.to_bytes())
+            
+            # Performance measurement
+            latencies = []
+            protocol_overheads = []
+            start_time = time.perf_counter()
+            
+            for i in range(iterations):
+                test_channel_id = (channel_id + i) % 256
+                test_encrypt = create_encryption_context(master_psk, test_channel_id, use_ascon=True)
+                test_decrypt = create_decryption_context(master_psk, test_channel_id, use_ascon=True)
+                
+                op_start = time.perf_counter()
+                
+                # Complete protocol pipeline
+                packet = test_encrypt.encrypt_message(plaintext)
+                packet_bytes = packet.to_bytes()
+                decrypted = test_decrypt.decrypt_packet(packet_bytes)
+                
+                op_end = time.perf_counter()
+                
+                # Verify round-trip
+                assert decrypted == plaintext
+                
+                latencies.append((op_end - op_start) * 1000)  # ms
+                protocol_overheads.append(len(packet_bytes) - len(plaintext))
+            
+            end_time = time.perf_counter()
+            total_time = end_time - start_time
+            
+            # Calculate metrics
+            throughput_bytes_per_sec = (payload_size * iterations) / total_time
+            throughput_mbps = (throughput_bytes_per_sec * 8) / (1024 * 1024)
+            ops_per_sec = iterations / total_time
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'iterations': iterations,
+                'total_time_seconds': total_time,
+                'throughput_mbps': throughput_mbps,
+                'operations_per_second': ops_per_sec,
+                'protocol_overhead_bytes': statistics.mean(protocol_overheads),
+                'latency_stats': {
+                    'mean': statistics.mean(latencies),
+                    'median': statistics.median(latencies),
+                    'min': min(latencies),
+                    'max': max(latencies),
+                    'std': statistics.stdev(latencies) if len(latencies) > 1 else 0.0
+                }
+            }
+            
+        except Exception as e:
+            results[str(payload_size)] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    return results
+
+
+def run_scrambling_performance_test(payload_sizes: List[int] = None,
+                                   iterations: int = 1000,
+                                   warmup_iterations: int = 100) -> Dict[str, Any]:
+    """
+    Reusable wrapper for scrambling component performance testing.
+    Isolates scrambling operations for component analysis.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    for payload_size in payload_sizes:
+        try:
+            from ouroboros.crypto.scramble import scramble_data, unscramble_data
+            from ouroboros.crypto.utils import generate_random_bytes
+            
+            # Generate test data
+            data = generate_random_bytes(payload_size)
+            permutation_key = generate_random_bytes(32)
+            tag = generate_random_bytes(16)
+            r = generate_random_bytes(4)
+            
+            # Warmup
+            for _ in range(warmup_iterations):
+                scrambled = scramble_data(data, permutation_key, tag, r)
+                unscramble_data(scrambled, permutation_key, tag, r)
+            
+            # Performance measurement
+            scramble_latencies = []
+            unscramble_latencies = []
+            start_time = time.perf_counter()
+            
+            for _ in range(iterations):
+                # Scramble timing
+                scramble_start = time.perf_counter()
+                scrambled = scramble_data(data, permutation_key, tag, r)
+                scramble_end = time.perf_counter()
+                
+                # Unscramble timing
+                unscramble_start = time.perf_counter()
+                unscrambled = unscramble_data(scrambled, permutation_key, tag, r)
+                unscramble_end = time.perf_counter()
+                
+                # Verify correctness
+                assert unscrambled == data
+                
+                scramble_latencies.append((scramble_end - scramble_start) * 1000)
+                unscramble_latencies.append((unscramble_end - unscramble_start) * 1000)
+            
+            end_time = time.perf_counter()
+            total_time = end_time - start_time
+            
+            # Calculate metrics
+            throughput_bytes_per_sec = (payload_size * iterations * 2) / total_time  # 2 operations per iteration
+            throughput_mbps = (throughput_bytes_per_sec * 8) / (1024 * 1024)
+            ops_per_sec = (iterations * 2) / total_time
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'iterations': iterations,
+                'total_time_seconds': total_time,
+                'throughput_mbps': throughput_mbps,
+                'operations_per_second': ops_per_sec,
+                'latency_stats': {
+                    'mean': statistics.mean(scramble_latencies + unscramble_latencies),
+                    'scramble_mean': statistics.mean(scramble_latencies),
+                    'unscramble_mean': statistics.mean(unscramble_latencies),
+                    'min': min(scramble_latencies + unscramble_latencies),
+                    'max': max(scramble_latencies + unscramble_latencies),
+                    'std': statistics.stdev(scramble_latencies + unscramble_latencies)
+                }
+            }
+            
+        except Exception as e:
+            results[str(payload_size)] = {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    return results
+
+
+def run_key_ratcheting_performance_test(iterations: int = 1000) -> Dict[str, Any]:
+    """
+    Reusable wrapper for key ratcheting performance testing.
+    Isolates key ratcheting operations for component analysis.
+    """
+    try:
+        from ouroboros.crypto.ratchet import RatchetState
+        from ouroboros.crypto.utils import generate_random_bytes
+        
+        # Setup
+        seed = generate_random_bytes(32)
+        ratchet = RatchetState(seed)
+        channel_id = 42
+        
+        # Performance measurement
+        ratchet_latencies = []
+        key_derivation_latencies = []
+        
+        start_time = time.perf_counter()
+        
+        for i in range(iterations):
+            # Key derivation timing
+            derive_start = time.perf_counter()
+            keys = ratchet.derive_keys(channel_id, i)
+            derive_end = time.perf_counter()
+            
+            # Ratchet advancement timing
+            ratchet_start = time.perf_counter()
+            ratchet.advance_ratchet_send()
+            ratchet_end = time.perf_counter()
+            
+            key_derivation_latencies.append((derive_end - derive_start) * 1000)
+            ratchet_latencies.append((ratchet_end - ratchet_start) * 1000)
+        
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        
+        ops_per_sec = (iterations * 2) / total_time  # 2 operations per iteration
+        
+        results = {
+            'iterations': iterations,
+            'total_time_seconds': total_time,
+            'operations_per_second': ops_per_sec,
+            'ratchet_latency_stats': {
+                'mean': statistics.mean(ratchet_latencies),
+                'median': statistics.median(ratchet_latencies),
+                'min': min(ratchet_latencies),
+                'max': max(ratchet_latencies),
+                'std': statistics.stdev(ratchet_latencies) if len(ratchet_latencies) > 1 else 0.0
+            },
+            'key_derivation_latency_stats': {
+                'mean': statistics.mean(key_derivation_latencies),
+                'median': statistics.median(key_derivation_latencies),
+                'min': min(key_derivation_latencies),
+                'max': max(key_derivation_latencies),
+                'std': statistics.stdev(key_derivation_latencies) if len(key_derivation_latencies) > 1 else 0.0
+            }
+        }
+        
+    except Exception as e:
+        results = {
+            'error': str(e),
+            'status': 'failed'
+        }
+    
+    return results
+
+
+def run_memory_analysis_test(payload_sizes: List[int] = None) -> Dict[str, Any]:
+    """
+    Reusable wrapper for memory analysis testing.
+    Analyzes memory consumption patterns for protocol operations.
+    """
+    if payload_sizes is None:
+        payload_sizes = [16, 64, 128, 256, 1024, 2048, 4096]
+    
+    results = {}
+    
+    try:
+        import psutil
+        import os
+        import gc
+        
+        process = psutil.Process(os.getpid())
+        
+        for payload_size in payload_sizes:
+            # Clean baseline
+            gc.collect()
+            baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
+            
+            # Create contexts and run operations
+            master_psk = generate_random_bytes(32)
+            channel_id = 42
+            
+            encrypt_ctx = create_encryption_context(master_psk, channel_id, use_ascon=False)
+            decrypt_ctx = create_decryption_context(master_psk, channel_id, use_ascon=False)
+            
+            plaintext = generate_random_bytes(payload_size)
+            operations = []
+            
+            # Run multiple operations
+            for i in range(50):
+                test_channel_id = (channel_id + i) % 256
+                test_encrypt = create_encryption_context(master_psk, test_channel_id, use_ascon=False)
+                test_decrypt = create_decryption_context(master_psk, test_channel_id, use_ascon=False)
+                
+                packet = test_encrypt.encrypt_message(plaintext)
+                decrypted = test_decrypt.decrypt_packet(packet.to_bytes())
+                
+                operations.append((packet, decrypted))
+            
+            # Measure memory after operations
+            final_memory = process.memory_info().rss / 1024 / 1024  # MB
+            memory_delta = final_memory - baseline_memory
+            
+            results[str(payload_size)] = {
+                'payload_size_bytes': payload_size,
+                'baseline_memory_mb': baseline_memory,
+                'final_memory_mb': final_memory,
+                'memory_delta_mb': memory_delta,
+                'memory_per_operation_kb': (memory_delta * 1024) / len(operations)
+            }
+            
+            # Cleanup
+            del operations, encrypt_ctx, decrypt_ctx
+            gc.collect()
+            
+    except ImportError:
+        results = {
+            'status': 'skipped',
+            'reason': 'psutil not available'
+        }
+    except Exception as e:
+        results = {
+            'error': str(e),
+            'status': 'failed'
+        }
+    
+    return results
