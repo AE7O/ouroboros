@@ -58,7 +58,7 @@ class SlidingWindow:
             return False
         
         # Check if we've already seen this counter
-        bit_position = diff - 1
+        bit_position = diff
         return not bool(self.seen_map & (1 << bit_position))
     
     def mark_received(self, counter: int) -> bool:
@@ -87,10 +87,12 @@ class SlidingWindow:
             
             # Update highest seen counter
             self.seen = counter
+            # Mark this counter as seen at position 0 (most recent)
+            self.seen_map |= 1
         else:
             # Counter is within current window - set bit
             diff = self.seen - counter
-            bit_position = diff - 1
+            bit_position = diff
             self.seen_map |= (1 << bit_position)
         
         return True

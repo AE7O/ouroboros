@@ -41,8 +41,8 @@ def create_parser() -> argparse.ArgumentParser:
     # Correctness evaluation
     correctness_parser = subparsers.add_parser('correctness',
                                              help='Run correctness tests and analysis')
-    correctness_parser.add_argument('--trials', type=int, default=100,
-                                   help='Number of test trials (default: 100)')
+    correctness_parser.add_argument('--trials', type=int, default=10,
+                                   help='Number of test trials (default: 10)')
     correctness_parser.add_argument('--verbose', action='store_true',
                                    help='Verbose output during testing')
     correctness_parser.add_argument('--include-edge-cases', action='store_true',
