@@ -396,18 +396,21 @@ def generate_throughput_comparison_chart(charts_dir: Path, results: Dict[str, An
     ouroboros_data = results.get('ouroboros_results', {})
     pqc_data = results.get('pqc_results', {})
     
-    # Extract Ouroboros throughput data
+    # Extract Ouroboros throughput data - fix the data structure access
     ouroboros_full = ouroboros_data.get('full_protocol', {})
     ouroboros_labels = []
     ouroboros_throughput = []
     
-    for size_str, data in ouroboros_full.items():
-        if size_str.endswith('_bytes') and isinstance(data, dict):
-            size = size_str.replace('_bytes', '')
-            throughput_pps = data.get('throughput_pps', 0)
-            if throughput_pps > 0:
-                ouroboros_labels.append(f"Ouroboros {size}B")
-                ouroboros_throughput.append(throughput_pps)
+    # The actual structure: full_protocol[size]['operations'][op]['ops_per_sec']
+    for size_key, size_data in ouroboros_full.items():
+        if isinstance(size_data, dict):
+            operations = size_data.get('operations', {})
+            for op_name, op_data in operations.items():
+                if isinstance(op_data, dict) and 'ops_per_sec' in op_data:
+                    ops_per_sec = op_data['ops_per_sec']
+                    if ops_per_sec > 0:
+                        ouroboros_labels.append(f"Ouroboros {size_key} {op_name.replace('_', ' ')}")
+                        ouroboros_throughput.append(ops_per_sec)
     
     # Extract PQC throughput data (convert operation timing to ops/sec)
     pqc_labels = []
@@ -538,9 +541,25 @@ def generate_size_overhead_chart(charts_dir: Path, results: Dict[str, Any]):
     ouroboros_data = results.get('ouroboros_results', {})
     pqc_data = results.get('pqc_results', {})
     
-    # Get Ouroboros overhead data
+    # Get Ouroboros overhead data - fix the data structure access
     overhead_data = ouroboros_data.get('overhead_analysis', {})
-    ouroboros_overhead = overhead_data.get('total_overhead_bytes', 0)
+    
+    # The overhead data is nested: overhead_analysis['per_message_overhead'][size]['overhead_bytes']
+    ouroboros_overhead = 0
+    per_message_data = overhead_data.get('per_message_overhead', {})
+    
+    # If per_message_overhead is a dict with size keys, get the overhead for first size
+    if isinstance(per_message_data, dict):
+        for size_key, size_overhead in per_message_data.items():
+            if isinstance(size_overhead, dict) and 'overhead_bytes' in size_overhead:
+                ouroboros_overhead = size_overhead['overhead_bytes']
+                break  # Use the first available size
+    else:
+        # Fallback: try other possible keys
+        ouroboros_overhead = (
+            overhead_data.get('total_overhead_bytes', 0) or
+            overhead_data.get('header_size_bytes', 0)
+        )
     
     # Extract PQC key and signature/ciphertext sizes (FIXED structure navigation)
     algorithms = []
