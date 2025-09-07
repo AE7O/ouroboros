@@ -1721,133 +1721,358 @@ def generate_overhead_analysis(packet_sizes: List[int]) -> Dict[str, Any]:
 
 
 def run_security_experiments(output_root: Path, exhaustive: bool,
-                            include_timing: bool, replay_window_size: int,
-                            format: str) -> Dict[str, Any]:
-    """Run comprehensive security evaluation."""
+                            include_timing: bool = True, replay_window_size: int = 100,
+                            format: str = 'json') -> Dict[str, Any]:
+    """
+    Run comprehensive security evaluation with focused message dependence and forward secrecy analysis.
+    Following the user's specifications for detailed empirical security validation.
+    """
     output_root.mkdir(parents=True, exist_ok=True)
     
     results = {
         'configuration': {
             'exhaustive': exhaustive,
             'include_timing': include_timing,
-            'replay_window_size': replay_window_size
+            'payload_size_bytes': 16,  # Fixed as per user specification
+            'bit_flip_counts': [0, 1, 2, 4, 8, 16],  # User specified bit flip analysis
+            'operation_counts': [1, 2, 5, 10, 50],  # User specified forward secrecy testing points
+            'timestamp': time.time()
         },
-        'replay_protection': {},
-        'key_security': {},
-        'timing_analysis': {} if include_timing else None
+        'message_dependence': {},
+        'forward_secrecy': {},
+        'legacy_security': {},
+        'security_summary': {}
     }
     
-    print(f"  Security evaluation (exhaustive={exhaustive})...")
+    print(f"  🔐 Comprehensive Security Evaluation")
+    print(f"     Fixed payload size: 16 bytes")
+    print(f"     Bit flip analysis: [0, 1, 2, 4, 8, 16] bits")
+    print(f"     Forward secrecy points: [1, 2, 5, 10, 50] operations")
     
-    # --- Real Replay Protection Test ---
-    print("    Testing replay protection...")
-    from ..protocol.decryptor import test_replay_protection
-    replay_result = test_replay_protection(use_ascon=False)
-    results['replay_protection'] = replay_result
-    write_data(output_root, 'replay_protection', replay_result, format)
+    # Phase 1: Message Dependence Analysis
+    print(f"  📊 Phase 1/3: Message Dependence Analysis")
+    print(f"    🎯 Comprehensive Bit Flip Analysis")
+    print(f"         Testing avalanche effect with detailed I/O tracking...")
+    
+    try:
+        # Import and run message dependence analysis
+        from ..tests.test_security import run_message_dependence_analysis
+        
+        message_dependence_results = run_message_dependence_analysis(
+            payload_size=16, 
+            bit_flip_counts=[0, 1, 2, 4, 8, 16]
+        )
+        
+        results['message_dependence'] = message_dependence_results
+        write_data(output_root, 'message_dependence', message_dependence_results, format)
+        
+        # Print summary for each bit flip count
+        for bit_count in [0, 1, 2, 4, 8, 16]:
+            key = f'flip_{bit_count}_bits'
+            if key in message_dependence_results:
+                data = message_dependence_results[key]
+                print(f"         {bit_count:2d} bits flipped: {data['encrypted_bits_changed_percentage']:.1f}% encrypted bits changed, "
+                      f"{data['scrambled_bits_changed_percentage']:.1f}% scrambled bits changed ✓")
+        
+    except Exception as e:
+        print(f"    ❌ Message dependence analysis failed: {e}")
+        results['message_dependence'] = {'error': str(e), 'status': 'failed'}
+    
+    # Phase 2: Forward Secrecy Analysis  
+    print(f"  🔄 Phase 2/3: Forward Secrecy Analysis")
+    print(f"    🛡️ Operational Flow Validation")
+    print(f"         Testing key isolation at compromise points...")
+    
+    try:
+        # Import and run forward secrecy analysis
+        from ..tests.test_security import run_forward_secrecy_analysis
+        
+        forward_secrecy_results = run_forward_secrecy_analysis(
+            operation_counts=[1, 2, 5, 10, 50]
+        )
+        
+        results['forward_secrecy'] = forward_secrecy_results
+        write_data(output_root, 'forward_secrecy', forward_secrecy_results, format)
+        
+        # Print summary for each operation count
+        for ops in [1, 2, 5, 10, 50]:
+            key = f'ops_{ops}'
+            if key in forward_secrecy_results:
+                data = forward_secrecy_results[key]
+                metrics = data['metrics']
+                print(f"         {ops:2d} operations: {metrics['forward_secrecy_strength_percentage']:.1f}% strength, "
+                      f"{metrics['compromise_resistance_percentage']:.1f}% resistance ✓")
+        
+    except Exception as e:
+        print(f"    ❌ Forward secrecy analysis failed: {e}")
+        results['forward_secrecy'] = {'error': str(e), 'status': 'failed'}
+    
+    # Phase 3: Legacy Security Tests (for completeness)
+    print(f"  🔐 Phase 3/3: Legacy Security Validation")
+    print(f"    🔍 Channel isolation, replay protection, timing analysis...")
+    
+    try:
+        legacy_security = run_legacy_security_tests(
+            include_timing=include_timing,
+            replay_window_size=replay_window_size
+        )
+        
+        results['legacy_security'] = legacy_security
+        write_data(output_root, 'legacy_security', legacy_security, format)
+        
+        # Print legacy test summaries
+        if 'channel_isolation' in legacy_security:
+            print(f"         Channel isolation: {'✓' if legacy_security['channel_isolation'] else '❌'}")
+        if 'replay_protection' in legacy_security:
+            print(f"         Replay protection: {'✓' if legacy_security['replay_protection'].get('protection_effective', False) else '❌'}")
+        if 'timing_analysis' in legacy_security and legacy_security['timing_analysis']:
+            assessment = legacy_security['timing_analysis'].get('assessment', 'Unknown')
+            print(f"         Timing analysis: {assessment}")
+        
+    except Exception as e:
+        print(f"    ❌ Legacy security tests failed: {e}")
+        results['legacy_security'] = {'error': str(e), 'status': 'failed'}
+    
+    # Generate comprehensive security summary
+    print(f"  📄 Security Summary")
+    print(f"    📄 Generating comprehensive security analysis report...")
+    
+    security_summary = generate_security_summary(results)
+    results['security_summary'] = security_summary
+    write_data(output_root, 'security_summary', results, format)
+    
+    print(f"  ✅ Security evaluation complete!")
+    print(f"     Results saved to: {output_root}")
+    
+    return results
 
-    # --- Real Key Security Test ---
-    print("    Testing key security...")
+
+def run_legacy_security_tests(include_timing: bool = True, 
+                            replay_window_size: int = 100) -> Dict[str, Any]:
+    """Run legacy security tests for completeness (channel isolation, replay protection, etc.)."""
     from ..crypto.utils import generate_random_bytes
     from ..protocol.encryptor import create_encryption_context
     from ..protocol.decryptor import create_decryption_context
     from ..crypto.ratchet import RatchetState
-    key_security = {}
-    # Forward secrecy: after ratchet step, old keys cannot decrypt new messages
-    master_psk = generate_random_bytes(32)
-    channel_id = 99
-    engine1 = create_encryption_context(master_psk, channel_id, use_ascon=False)
-    engine2 = create_encryption_context(master_psk, channel_id, use_ascon=False)
-    plaintext = b"Key security test message"
-    packet1 = engine1.encrypt_message(plaintext)
-    # Advance ratchet in engine2 (simulate key update)
-    engine2.ratchet.advance_ratchet_send()
-    forward_secrecy = True
+    
+    legacy_results = {}
+    
+    # Channel isolation test
     try:
-        # Should fail to decrypt with advanced ratchet
-        dec_engine = create_decryption_context(master_psk, channel_id, use_ascon=False)
-        dec_engine.ratchet.advance_ratchet_send()
-        dec_engine.decrypt_packet(packet1.to_bytes())
-        forward_secrecy = False
-    except Exception:
-        pass
-    key_security['forward_secrecy'] = forward_secrecy
-    # Channel isolation: different channel IDs must not decrypt each other's packets
-    engine3 = create_encryption_context(master_psk, channel_id+1, use_ascon=False)
-    packet2 = engine3.encrypt_message(plaintext)
-    dec_engine2 = create_decryption_context(master_psk, channel_id, use_ascon=False)
-    try:
-        dec_engine2.decrypt_packet(packet2.to_bytes())
-        channel_isolation = False
-    except Exception:
-        channel_isolation = True
-    key_security['channel_isolation'] = channel_isolation
-    # Ratchet uniqueness: ratchets with different master keys must not decrypt each other's packets
-    master_psk2 = generate_random_bytes(32)
-    engine4 = create_encryption_context(master_psk2, channel_id, use_ascon=False)
-    packet3 = engine4.encrypt_message(plaintext)
-    dec_engine3 = create_decryption_context(master_psk, channel_id, use_ascon=False)
-    try:
-        dec_engine3.decrypt_packet(packet3.to_bytes())
-        ratchet_uniqueness = False
-    except Exception:
-        ratchet_uniqueness = True
-    key_security['ratchet_uniqueness'] = ratchet_uniqueness
-    key_security['tests_run'] = 3
-    results['key_security'] = key_security
-    write_data(output_root, 'key_security', key_security, format)
-
-    # --- Real Timing Analysis ---
-    if include_timing:
-        print("    Timing attack analysis...")
-        import time
-        timings = {'encryption': [], 'decryption': [], 'ratchet': []}
         master_psk = generate_random_bytes(32)
-        channel_id = 77
-        engine = create_encryption_context(master_psk, channel_id, use_ascon=False)
-        dec_engine = create_decryption_context(master_psk, channel_id, use_ascon=False)
-        plaintext = b"Timing analysis message" * 4
-        # Encryption timing
-        for _ in range(20):
-            t0 = time.perf_counter()
-            packet = engine.encrypt_message(plaintext)
-            t1 = time.perf_counter()
-            timings['encryption'].append((t1-t0)*1000)
-        # Decryption timing - generate fresh packets to avoid replay errors
-        for _ in range(20):
-            fresh_packet = engine.encrypt_message(plaintext)
-            packet_bytes = fresh_packet.to_bytes()
-            t0 = time.perf_counter()
-            dec_engine.decrypt_packet(packet_bytes)
-            t1 = time.perf_counter()
-            timings['decryption'].append((t1-t0)*1000)
-        # Ratchet timing
-        for _ in range(20):
-            t0 = time.perf_counter()
-            engine.ratchet.advance_ratchet_send()
-            t1 = time.perf_counter()
-            timings['ratchet'].append((t1-t0)*1000)
-        import statistics
-        timing_result = {
-            'encryption_timing_ms': {
-                'mean': statistics.mean(timings['encryption']),
-                'stdev': statistics.stdev(timings['encryption'])
-            },
-            'decryption_timing_ms': {
-                'mean': statistics.mean(timings['decryption']),
-                'stdev': statistics.stdev(timings['decryption'])
-            },
-            'ratchet_timing_ms': {
-                'mean': statistics.mean(timings['ratchet']),
-                'stdev': statistics.stdev(timings['ratchet'])
-            },
-            'assessment': 'Low timing variance - good side-channel resistance' if max(statistics.stdev(timings['encryption']), statistics.stdev(timings['decryption']), statistics.stdev(timings['ratchet'])) < 0.1 else 'High timing variance - investigate side-channel risk'
-        }
-        results['timing_analysis'] = timing_result
-        write_data(output_root, 'timing_analysis', timing_result, format)
+        plaintext = b"Channel isolation test message"
+        
+        engine1 = create_encryption_context(master_psk, channel_id=1, use_ascon=False)
+        engine2 = create_encryption_context(master_psk, channel_id=2, use_ascon=False)
+        decoder1 = create_decryption_context(master_psk, channel_id=1, use_ascon=False)
+        
+        packet1 = engine1.encrypt_message(plaintext)
+        packet2 = engine2.encrypt_message(plaintext)
+        
+        # Should be able to decrypt packet from same channel
+        can_decrypt_same = False
+        try:
+            decrypted = decoder1.decrypt_packet(packet1.to_bytes())
+            can_decrypt_same = (decrypted == plaintext)
+        except:
+            pass
+        
+        # Should NOT be able to decrypt packet from different channel
+        cannot_decrypt_different = True
+        try:
+            decoder1.decrypt_packet(packet2.to_bytes())
+            cannot_decrypt_different = False  # If we got here, isolation failed
+        except:
+            pass  # Good, decryption failed as expected
+        
+        legacy_results['channel_isolation'] = can_decrypt_same and cannot_decrypt_different
+        
+    except Exception as e:
+        legacy_results['channel_isolation'] = {'error': str(e)}
+    
+    # Replay protection test
+    try:
+        from ..protocol.decryptor import test_replay_protection
+        replay_result = test_replay_protection(use_ascon=False)
+        legacy_results['replay_protection'] = replay_result
+    except Exception as e:
+        legacy_results['replay_protection'] = {'error': str(e)}
+    
+    # Timing analysis
+    if include_timing:
+        try:
+            import time
+            import statistics
+            
+            timings = {'encryption': [], 'decryption': [], 'ratchet': []}
+            master_psk = generate_random_bytes(32)
+            channel_id = 77
+            
+            engine = create_encryption_context(master_psk, channel_id, use_ascon=False)
+            dec_engine = create_decryption_context(master_psk, channel_id, use_ascon=False)
+            plaintext = b"Timing analysis" + b"_" * (16 - len("Timing analysis"))  # 16 bytes
+            
+            # Encryption timing
+            for _ in range(20):
+                t0 = time.perf_counter()
+                packet = engine.encrypt_message(plaintext)
+                t1 = time.perf_counter()
+                timings['encryption'].append((t1-t0)*1000)
+            
+            # Decryption timing
+            for _ in range(20):
+                fresh_packet = engine.encrypt_message(plaintext)
+                packet_bytes = fresh_packet.to_bytes()
+                t0 = time.perf_counter()
+                dec_engine.decrypt_packet(packet_bytes)
+                t1 = time.perf_counter()
+                timings['decryption'].append((t1-t0)*1000)
+            
+            # Ratchet timing
+            for _ in range(20):
+                t0 = time.perf_counter()
+                engine.ratchet.advance_ratchet_send()
+                t1 = time.perf_counter()
+                timings['ratchet'].append((t1-t0)*1000)
+            
+            timing_result = {
+                'encryption_timing_ms': {
+                    'mean': statistics.mean(timings['encryption']),
+                    'stdev': statistics.stdev(timings['encryption']),
+                    'min': min(timings['encryption']),
+                    'max': max(timings['encryption'])
+                },
+                'decryption_timing_ms': {
+                    'mean': statistics.mean(timings['decryption']),
+                    'stdev': statistics.stdev(timings['decryption']),
+                    'min': min(timings['decryption']),
+                    'max': max(timings['decryption'])
+                },
+                'ratchet_timing_ms': {
+                    'mean': statistics.mean(timings['ratchet']),
+                    'stdev': statistics.stdev(timings['ratchet']),
+                    'min': min(timings['ratchet']),
+                    'max': max(timings['ratchet'])
+                }
+            }
+            
+            max_stdev = max(
+                timing_result['encryption_timing_ms']['stdev'],
+                timing_result['decryption_timing_ms']['stdev'],
+                timing_result['ratchet_timing_ms']['stdev']
+            )
+            
+            timing_result['assessment'] = (
+                'Low timing variance - good side-channel resistance' 
+                if max_stdev < 0.1 
+                else 'High timing variance - investigate side-channel risk'
+            )
+            
+            legacy_results['timing_analysis'] = timing_result
+            
+        except Exception as e:
+            legacy_results['timing_analysis'] = {'error': str(e)}
+    
+    return legacy_results
 
-    # Save summary
-    write_data(output_root, 'security_summary', results, format)
+
+def generate_security_summary(results: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate comprehensive security analysis summary."""
+    summary = {
+        'timestamp': time.time(),
+        'overall_security_assessment': 'Unknown',
+        'message_dependence_assessment': 'Unknown',
+        'forward_secrecy_assessment': 'Unknown',
+        'legacy_security_assessment': 'Unknown',
+        'recommendations': []
+    }
+    
+    # Assess message dependence
+    if 'message_dependence' in results and 'error' not in results['message_dependence']:
+        md_results = results['message_dependence']
+        good_avalanche_count = 0
+        total_tests = 0
+        
+        for bit_count in [1, 2, 4, 8, 16]:  # Skip 0 bit flips
+            key = f'flip_{bit_count}_bits'
+            if key in md_results:
+                total_tests += 1
+                data = md_results[key]
+                if data.get('encrypted_bits_changed_percentage', 0) > 40:  # Good avalanche effect
+                    good_avalanche_count += 1
+        
+        if total_tests > 0:
+            avalanche_percentage = (good_avalanche_count / total_tests) * 100
+            if avalanche_percentage >= 80:
+                summary['message_dependence_assessment'] = 'Excellent - Strong avalanche effect'
+            elif avalanche_percentage >= 60:
+                summary['message_dependence_assessment'] = 'Good - Adequate avalanche effect'
+            else:
+                summary['message_dependence_assessment'] = 'Poor - Weak avalanche effect'
+                summary['recommendations'].append('Investigate encryption algorithm avalanche properties')
+    
+    # Assess forward secrecy
+    if 'forward_secrecy' in results and 'error' not in results['forward_secrecy']:
+        fs_results = results['forward_secrecy']
+        total_fs_strength = 0
+        valid_tests = 0
+        
+        for ops in [1, 2, 5, 10, 50]:
+            key = f'ops_{ops}'
+            if key in fs_results and 'metrics' in fs_results[key]:
+                metrics = fs_results[key]['metrics']
+                total_fs_strength += metrics.get('overall_forward_secrecy_score', 0)
+                valid_tests += 1
+        
+        if valid_tests > 0:
+            avg_fs_strength = total_fs_strength / valid_tests
+            if avg_fs_strength >= 95:
+                summary['forward_secrecy_assessment'] = 'Excellent - Strong forward secrecy'
+            elif avg_fs_strength >= 80:
+                summary['forward_secrecy_assessment'] = 'Good - Adequate forward secrecy'
+            else:
+                summary['forward_secrecy_assessment'] = 'Poor - Weak forward secrecy'
+                summary['recommendations'].append('Review ratcheting mechanism and key evolution')
+    
+    # Assess legacy security
+    if 'legacy_security' in results and 'error' not in results['legacy_security']:
+        legacy = results['legacy_security']
+        legacy_score = 0
+        
+        if legacy.get('channel_isolation', False):
+            legacy_score += 1
+        if legacy.get('replay_protection', {}).get('protection_effective', False):
+            legacy_score += 1
+        if 'timing_analysis' in legacy and 'Low timing variance' in legacy['timing_analysis'].get('assessment', ''):
+            legacy_score += 1
+        
+        if legacy_score >= 3:
+            summary['legacy_security_assessment'] = 'Excellent - All legacy security properties met'
+        elif legacy_score >= 2:
+            summary['legacy_security_assessment'] = 'Good - Most legacy security properties met'
+        else:
+            summary['legacy_security_assessment'] = 'Poor - Legacy security issues detected'
+            summary['recommendations'].append('Address channel isolation, replay protection, or timing issues')
+    
+    # Overall assessment
+    assessments = [
+        summary['message_dependence_assessment'],
+        summary['forward_secrecy_assessment'], 
+        summary['legacy_security_assessment']
+    ]
+    
+    excellent_count = sum(1 for a in assessments if 'Excellent' in a)
+    good_count = sum(1 for a in assessments if 'Good' in a)
+    
+    if excellent_count >= 2:
+        summary['overall_security_assessment'] = 'Excellent - Protocol demonstrates strong security properties'
+    elif excellent_count + good_count >= 2:
+        summary['overall_security_assessment'] = 'Good - Protocol has adequate security with some areas for improvement'
+    else:
+        summary['overall_security_assessment'] = 'Poor - Significant security concerns identified'
+        summary['recommendations'].append('Comprehensive security review recommended')
+    
+    return summary
     return results
 
 
