@@ -1,0 +1,21 @@
+[33m095bcf1[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/rework-symmetric-protocol[m[33m)[m HEAD@{0}: rebase (start): checkout refs/remotes/origin/rework-symmetric-protocol
+[33mb542cb7[m[33m ([m[1;32mrework-symmetric-protocol[m[33m)[m HEAD@{1}: commit: Enhance security evaluation framework with comprehensive message dependence and forward secrecy analysis, including detailed metrics and results reporting.
+[33m2999c54[m HEAD@{2}: commit: Add comprehensive tests for Post-Quantum Cryptography (PQC) algorithms
+[33mf209a0b[m HEAD@{3}: commit: Fixed correctness evaluation
+[33m2de0757[m HEAD@{4}: commit: Fix data structure access for Ouroboros throughput and overhead analysis in comparison charts
+[33m4ccf7f7[m HEAD@{5}: commit: Refactor comparison chart generation for improved clarity and accuracy in performance metrics between Ouroboros and PQC.
+[33m6f4c9c8[m HEAD@{6}: commit: Fixed KEM key generation and encapsulation/decapsulation to work for comparison with ouroboros
+[33ma9ca001[m HEAD@{7}: commit: Refactor security experiments to implement real tests and remove unused PQC experiments
+[33mfde45e2[m HEAD@{8}: commit: 18:35 update
+[33mcb708e6[m HEAD@{9}: commit: Full evaluation suite for Ouroboros protocol including performance, correctness, and security tests. Integrates post-quantum cryptographic algorithms and generates comprehensive reports and visualizations.
+[33m2e6c227[m HEAD@{10}: commit: Remove unused crypto and session management files
+[33ma9022ba[m HEAD@{11}: commit: Refactored symmetric protocol implementation
+[33mfc87a42[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{12}: checkout: moving from main to rework-symmetric-protocol
+[33mfc87a42[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{13}: commit: mods
+[33mbff0742[m HEAD@{14}: commit: kj
+[33mc1f947d[m HEAD@{15}: commit: Add new example scripts and update demos
+[33ma4d56eb[m HEAD@{16}: commit: Refactor config handling and add tests
+[33m55add56[m HEAD@{17}: commit: Add device provisioning and update protocol, crypto, and transport modules
+[33maf9b156[m HEAD@{18}: commit: Restructure the project directory layout to follow Python packaging standards and fixed import paths.
+[33m949ce21[m HEAD@{19}: commit: 1st Stage: Initial Sturucture and Key Derivation
+[33m25dbdf3[m HEAD@{20}: clone: from https://github.com/AE7O/ouroboros
