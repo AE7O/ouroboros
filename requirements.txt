@@ -1,3 +1,22 @@
-# Ouroboros Protocol - Python Implementation
-
+# Core cryptographic dependencies
 cryptography>=41.0.0
+
+# Official ASCON implementation aligned with NIST SP 800-232
+# Note: Install with: pip install https://raw.githubusercontent.com/meichlseder/pyascon/master/ascon.py
+# pyascon>=1.0.0  # Will be available when published to PyPI
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Performance and evaluation
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Network analysis (optional)
+scapy>=2.5.0
+
+# Development tools
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0

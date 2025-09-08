@@ -8,8 +8,8 @@ This module provides the core cryptographic functions including:
 """
 
 from .kdf import derive_session_keys, KeyDerivationError
-from .aes_gcm import encrypt_message, decrypt_message, EncryptionError
-from .scramble import scramble_data, unscramble_data, ScramblingError
+from .aead import quick_encrypt as encrypt_message, quick_decrypt as decrypt_message, AEADDecryptionError as EncryptionError
+from .scramble import scramble_data, unscramble_data
 
 __all__ = [
     'derive_session_keys',
@@ -18,6 +18,5 @@ __all__ = [
     'scramble_data',
     'unscramble_data',
     'KeyDerivationError',
-    'EncryptionError', 
-    'ScramblingError'
+    'EncryptionError'
 ]

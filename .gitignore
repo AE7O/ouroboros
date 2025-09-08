@@ -1,0 +1,28 @@
+# Bytecode/cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local tooling
+.vscode/
+.ipynb_checkpoints/
+
+# Logs/coverage
+*.log
+.coverage
+htmlcov/
+
+# Run outputs
+evaluation_results/

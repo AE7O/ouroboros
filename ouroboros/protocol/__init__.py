@@ -7,14 +7,12 @@ This module provides the core protocol functionality including:
 - Reliability and acknowledgment handling
 """
 
-from .packet import OuroborosPacket, PacketType, PacketError
-from .session import OuroborosSession, SessionError
+from .packet import OuroborosPacket, PacketFormatError
 from .reliability import ReliabilityManager, DeliveryError
 
 __all__ = [
     'OuroborosPacket',
-    'PacketType', 
-    'PacketError',
+    'PacketFormatError',
     'OuroborosSession',
     'SessionError',
     'ReliabilityManager',
